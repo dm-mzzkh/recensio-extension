@@ -4,14 +4,79 @@
   <meta charset="UTF-8" />
   <title>Recensio Library</title>
   <style>
-    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; padding: 24px; max-width: 1100px; margin: 0 auto; }
-    h1 { font-size: 24px; margin: 0 0 16px; }
-    p { color: #94a3b8; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0 auto; padding: 24px; max-width: 1200px; font-size: 13px; }
+    h1 { font-size: 20px; margin: 0 0 16px; }
+    .toolbar { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    input[type="text"], input[type="number"], textarea {
+      background: #1e293b; color: #f8fafc; border: 1px solid #334155;
+      border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: inherit;
+    }
+    input:focus, textarea:focus { outline: none; border-color: #6366f1; }
+    .toolbar #query { flex: 1; min-width: 200px; }
+    .toolbar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
+    .toolbar input[type="number"] { width: 60px; }
+
+    #tag-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; min-height: 4px; }
+    .chip { display: inline-flex; align-items: center; gap: 2px; background: #334155; color: #e2e8f0; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
+    .chip--filter { background: #4338ca; }
+    .chip-remove { background: transparent; color: inherit; border: 0; cursor: pointer; padding: 0 2px; opacity: 0.7; font-size: 14px; line-height: 1; }
+    .chip-remove:hover { opacity: 1; color: #f87171; }
+
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+
+    #list { display: flex; flex-direction: column; gap: 8px; }
+    .card { display: flex; gap: 12px; padding: 8px; background: #1e293b; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+    .card:hover { border-color: #475569; }
+    .card--selected { border-color: #6366f1; background: #1e1b4b; }
+    .thumb { width: 120px; height: 67px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: #0f172a; }
+    .card-meta { min-width: 0; flex: 1; }
+    .card-title { font-weight: 600; font-size: 13px; line-height: 1.3; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .card-channel { font-size: 11px; color: #94a3b8; margin-bottom: 4px; }
+    .card-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4px; }
+    .card-tags .tag { font-size: 10px; color: #cbd5e1; background: #334155; padding: 1px 4px; border-radius: 3px; }
+    .card-rating { font-size: 11px; color: #fbbf24; font-weight: 600; }
+
+    #detail { background: #1e293b; padding: 16px; border-radius: 6px; min-height: 400px; position: sticky; top: 24px; }
+    .detail-thumb { width: 100%; max-height: 220px; object-fit: cover; border-radius: 4px; }
+    .detail h2 { font-size: 16px; margin: 12px 0 4px; }
+    .detail-sub { font-size: 12px; color: #94a3b8; margin: 0 0 12px; }
+    .detail-sub a { color: #818cf8; text-decoration: none; }
+    .detail-sub a:hover { text-decoration: underline; }
+    .detail label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 14px 0 4px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 4px; margin-bottom: 6px; }
+    .detail input[type="text"], .detail textarea { width: 100%; background: #0f172a; }
+    .review { resize: vertical; min-height: 120px; line-height: 1.45; }
+    .rating-row { display: flex; align-items: center; gap: 12px; }
+    .rating-slider { flex: 1; }
+    .rating-value { font-weight: 700; min-width: 56px; color: #fbbf24; text-align: right; }
+    .actions { display: flex; gap: 8px; margin-top: 16px; }
+    .actions button { padding: 8px 14px; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; background: #6366f1; color: white; }
+    .actions button:hover:not(:disabled) { background: #4f46e5; }
+    .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .actions button.danger { background: #475569; }
+    .actions button.danger:hover { background: #b91c1c; }
+    .empty { text-align: center; color: #64748b; padding: 32px 16px; margin: 0; }
   </style>
 </head>
 <body>
-  <h1>Library</h1>
-  <p>List, search, and review editor — phase 4.</p>
+  <h1>Recensio Library</h1>
+  <div class="toolbar">
+    <input id="query" type="text" placeholder="Search title or channel…" />
+    <input id="tag-filter-input" type="text" list="all-tags-list" placeholder="Filter by tag (Enter)" autocomplete="off" />
+    <label>Rating ≥ <input id="rating-min" type="number" min="1" max="10" value="1" /></label>
+    <label>≤ <input id="rating-max" type="number" min="1" max="10" value="10" /></label>
+  </div>
+  <div id="tag-filters"></div>
+  <div class="layout">
+    <div>
+      <div id="list"></div>
+      <p id="empty" class="empty" style="display:none">No videos match.</p>
+    </div>
+    <div id="detail"><p class="empty">Select a video to edit</p></div>
+  </div>
+  <datalist id="all-tags-list"></datalist>
   <script src="main.js"></script>
 </body>
 </html>
