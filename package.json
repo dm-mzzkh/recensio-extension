@@ -1,0 +1,24 @@
+{
+  "name": "recensio-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Save YouTube videos with tags, ratings, and reviews",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "start": "web-ext run --source-dir dist --target firefox-desktop --browser-console",
+    "lint": "tsc --noEmit",
+    "lint:ext": "web-ext lint --source-dir dist",
+    "package": "npm run build && web-ext build --source-dir dist --artifacts-dir web-ext-artifacts --overwrite-dest"
+  },
+  "devDependencies": {
+    "@types/firefox-webext-browser": "^120.0.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0",
+    "web-ext": "^8.0.0"
+  },
+  "dependencies": {
+    "dexie": "^4.0.0"
+  }
+}
