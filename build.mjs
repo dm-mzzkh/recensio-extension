@@ -11,6 +11,7 @@ const ctx = await esbuild.context({
   entryPoints: {
     'popup/main': 'src/popup/main.ts',
     'library/main': 'src/library/main.ts',
+    'editor/main': 'src/editor/main.ts',
     'background/index': 'src/background/index.ts',
     'content/index': 'src/content/index.ts',
   },
@@ -27,6 +28,7 @@ async function copyStatic() {
   await cp('public', outdir, { recursive: true });
   await cp('src/popup/index.html', `${outdir}/popup/index.html`);
   await cp('src/library/index.html', `${outdir}/library/index.html`);
+  await cp('src/editor/index.html', `${outdir}/editor/index.html`);
 }
 
 if (watch) {

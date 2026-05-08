@@ -27,6 +27,12 @@
       "js": ["content/index.js"]
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["editor/index.html", "editor/main.js"],
+      "matches": ["https://www.youtube.com/*"]
+    }
+  ],
   "icons": {
     "48": "icons/icon.svg",
     "128": "icons/icon.svg"

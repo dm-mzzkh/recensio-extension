@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recensio Editor</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { font-family: system-ui, sans-serif; background: #1e293b; color: #f8fafc; margin: 0; padding: 16px; font-size: 13px; }
+
+    h2 { font-size: 16px; margin: 12px 0 4px; }
+    label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 14px 0 4px; }
+    input[type="text"], input[type="number"], textarea {
+      background: #0f172a; color: #f8fafc; border: 1px solid #334155;
+      border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: inherit; width: 100%;
+    }
+    input:focus, textarea:focus { outline: none; border-color: #6366f1; }
+
+    .detail-thumb { width: 100%; max-height: 220px; object-fit: cover; border-radius: 4px; }
+    .detail-sub { font-size: 12px; color: #94a3b8; margin: 0 0 12px; }
+    .detail-sub a { color: #818cf8; text-decoration: none; }
+    .detail-sub a:hover { text-decoration: underline; }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 4px; margin-bottom: 6px; }
+    .chip { display: inline-flex; align-items: center; gap: 2px; background: #334155; color: #e2e8f0; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
+    .chip-remove { background: transparent; color: inherit; border: 0; cursor: pointer; padding: 0 2px; opacity: 0.7; font-size: 14px; line-height: 1; }
+    .chip-remove:hover { opacity: 1; color: #f87171; }
+
+    .review { resize: vertical; min-height: 120px; line-height: 1.45; }
+    .rating-row { display: flex; align-items: center; gap: 12px; }
+    .rating-slider { flex: 1; }
+    .rating-value { font-weight: 700; min-width: 56px; color: #fbbf24; text-align: right; }
+
+    .actions { display: flex; gap: 8px; margin-top: 16px; }
+    .actions button { padding: 8px 14px; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; background: #6366f1; color: white; }
+    .actions button:hover:not(:disabled) { background: #4f46e5; }
+    .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .actions button.danger { background: #475569; }
+    .actions button.danger:hover { background: #b91c1c; }
+
+    .empty { text-align: center; color: #64748b; padding: 32px 16px; margin: 0; }
+    .status { font-size: 12px; color: #94a3b8; padding: 16px 0; }
+  </style>
+</head>
+<body>
+  <div id="root"><p class="status">Loading…</p></div>
+  <script src="main.js"></script>
+</body>
+</html>
