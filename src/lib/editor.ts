@@ -6,6 +6,9 @@ import {
   deleteVideo,
   listTags,
   normalizeTag,
+  listScreenshots,
+  deleteScreenshot,
+  type Screenshot,
 } from '../db';
 
 export interface EditorOptions {
@@ -14,11 +17,25 @@ export interface EditorOptions {
   showOpenLink?: boolean;
 }
 
+const editorCleanups = new WeakMap<HTMLElement, () => void>();
+
+function fmtTime(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const s = Math.floor(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
+}
+
 export async function renderEditor(
   root: HTMLElement,
   videoId: string,
   opts: EditorOptions = {},
 ): Promise<void> {
+  editorCleanups.get(root)?.();
+  editorCleanups.delete(root);
   root.innerHTML = '';
 
   const v = await getVideo(videoId);
@@ -151,6 +168,79 @@ export async function renderEditor(
   reviewArea.placeholder = 'Write your review…';
   reviewArea.value = v.review ?? '';
   wrap.appendChild(reviewArea);
+
+  // Screenshots
+  const shotsLabel = document.createElement('label');
+  shotsLabel.textContent = 'Screenshots';
+  wrap.appendChild(shotsLabel);
+
+  const shotsBox = document.createElement('div');
+  shotsBox.className = 'shots';
+  wrap.appendChild(shotsBox);
+
+  const objectUrls: string[] = [];
+  editorCleanups.set(root, () => {
+    for (const u of objectUrls) URL.revokeObjectURL(u);
+    objectUrls.length = 0;
+  });
+
+  function openLightbox(url: string, alt: string) {
+    const box = document.createElement('div');
+    box.className = 'shot-lightbox';
+    box.addEventListener('click', () => box.remove());
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = alt;
+    box.appendChild(img);
+    document.body.appendChild(box);
+  }
+
+  async function renderShots() {
+    for (const u of objectUrls) URL.revokeObjectURL(u);
+    objectUrls.length = 0;
+    shotsBox.innerHTML = '';
+    const items: Screenshot[] = await listScreenshots(videoId);
+    if (items.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'shots-empty';
+      empty.textContent = 'Нет скриншотов. Нажмите 📷 рядом с заголовком видео.';
+      shotsBox.appendChild(empty);
+      return;
+    }
+    for (const s of items) {
+      const url = URL.createObjectURL(s.blob);
+      objectUrls.push(url);
+      const card = document.createElement('div');
+      card.className = 'shot';
+
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = `${fmtTime(s.timeSec)}`;
+      img.addEventListener('click', () => openLightbox(url, img.alt));
+      card.appendChild(img);
+
+      const time = document.createElement('span');
+      time.className = 'shot-time';
+      time.textContent = fmtTime(s.timeSec);
+      card.appendChild(time);
+
+      const del = document.createElement('button');
+      del.className = 'shot-del';
+      del.type = 'button';
+      del.title = 'Delete screenshot';
+      del.textContent = '×';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (s.id == null) return;
+        await deleteScreenshot(s.id);
+        await renderShots();
+      });
+      card.appendChild(del);
+
+      shotsBox.appendChild(card);
+    }
+  }
+  await renderShots();
 
   // Actions
   const actions = document.createElement('div');

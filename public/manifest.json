@@ -12,11 +12,17 @@
       }
     }
   },
-  "permissions": ["storage", "activeTab", "tabs"],
+  "permissions": ["storage", "tabs"],
   "host_permissions": ["https://www.youtube.com/*"],
   "action": {
     "default_popup": "popup/index.html",
     "default_title": "Recensio"
+  },
+  "commands": {
+    "take-screenshot": {
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Сохранить скриншот текущего кадра видео YouTube"
+    }
   },
   "background": {
     "scripts": ["background/index.js"]

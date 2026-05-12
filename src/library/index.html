@@ -58,6 +58,34 @@
     .actions button.danger { background: #475569; }
     .actions button.danger:hover { background: #b91c1c; }
     .empty { text-align: center; color: #64748b; padding: 32px 16px; margin: 0; }
+
+    .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+    .shots-empty { grid-column: 1 / -1; font-size: 12px; color: #64748b; margin: 0; padding: 8px 0; }
+    .shot { position: relative; border-radius: 4px; overflow: hidden; background: #0f172a; cursor: pointer; }
+    .shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
+    .shot-time {
+      position: absolute; left: 4px; bottom: 4px;
+      background: rgba(15, 23, 42, 0.85); color: #f8fafc;
+      font: 600 11px system-ui, sans-serif;
+      padding: 2px 5px; border-radius: 3px;
+    }
+    .shot-del {
+      position: absolute; top: 4px; right: 4px;
+      width: 20px; height: 20px;
+      background: rgba(15, 23, 42, 0.85); color: #f8fafc;
+      border: 0; border-radius: 10px; cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 0;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .shot:hover .shot-del { opacity: 1; }
+    .shot-del:hover { background: #b91c1c; }
+    .shot-lightbox {
+      position: fixed; inset: 0; z-index: 2147483647;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex; align-items: center; justify-content: center;
+      cursor: zoom-out;
+    }
+    .shot-lightbox img { max-width: 96vw; max-height: 96vh; border-radius: 6px; }
   </style>
 </head>
 <body>

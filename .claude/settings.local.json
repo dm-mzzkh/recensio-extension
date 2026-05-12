@@ -4,7 +4,13 @@
       "Bash(npm --version)",
       "Bash(npm install *)",
       "Bash(npm run *)",
-      "Bash(npx web-ext *)"
+      "Bash(npx web-ext *)",
+      "Bash(gh repo *)",
+      "Bash(gh api *)",
+      "Bash(curl -sS https://api.github.com/repos/gurumukhi/youtube-screenshot/contents)",
+      "Bash(curl -sS https://api.github.com/repos/gurumukhi/youtube-screenshot/contents/src)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(d['type'], d['path'], d.get\\('size','-'\\)\\) for d in data]\")",
+      "Bash(curl *)"
     ]
   }
 }

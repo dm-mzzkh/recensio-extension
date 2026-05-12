@@ -39,12 +39,23 @@ export interface CollectionItem {
   position: number;
 }
 
+export interface Screenshot {
+  id?: number;
+  videoId: string;
+  blob: Blob;
+  width: number;
+  height: number;
+  timeSec: number;
+  createdAt: number;
+}
+
 export class RecensioDB extends Dexie {
   videos!: Table<Video, string>;
   tags!: Table<Tag, number>;
   videoTags!: Table<VideoTag, number>;
   collections!: Table<Collection, number>;
   collectionItems!: Table<CollectionItem, number>;
+  screenshots!: Table<Screenshot, number>;
 
   constructor() {
     super('recensio');
@@ -54,6 +65,9 @@ export class RecensioDB extends Dexie {
       videoTags: '++id, [videoId+tagId], videoId, tagId',
       collections: '++id, name, createdAt',
       collectionItems: '++id, [collectionId+videoId], collectionId, videoId, position',
+    });
+    this.version(2).stores({
+      screenshots: '++id, videoId, createdAt, [videoId+createdAt]',
     });
   }
 }

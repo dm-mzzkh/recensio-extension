@@ -24,11 +24,19 @@ export async function updateReview(
 }
 
 export async function deleteVideo(videoId: string): Promise<void> {
-  await db.transaction('rw', db.videos, db.videoTags, db.collectionItems, async () => {
-    await db.videos.delete(videoId);
-    await db.videoTags.where('videoId').equals(videoId).delete();
-    await db.collectionItems.where('videoId').equals(videoId).delete();
-  });
+  await db.transaction(
+    'rw',
+    db.videos,
+    db.videoTags,
+    db.collectionItems,
+    db.screenshots,
+    async () => {
+      await db.videos.delete(videoId);
+      await db.videoTags.where('videoId').equals(videoId).delete();
+      await db.collectionItems.where('videoId').equals(videoId).delete();
+      await db.screenshots.where('videoId').equals(videoId).delete();
+    },
+  );
 }
 
 export async function listVideos(): Promise<Video[]> {
