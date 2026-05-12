@@ -144,7 +144,16 @@ function waitNextVideoFrame(video: HTMLVideoElement): Promise<void> {
     requestVideoFrameCallback?: (cb: () => void) => number;
   }).requestVideoFrameCallback;
   if (typeof rvfc !== 'function') return Promise.resolve();
-  return new Promise((resolve) => rvfc.call(video, () => resolve()));
+  return new Promise((resolve) => {
+    let done = false;
+    const settle = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    rvfc.call(video, settle);
+    window.setTimeout(settle, 500);
+  });
 }
 
 async function takeScreenshot() {
@@ -197,6 +206,7 @@ async function takeScreenshot() {
 }
 
 function ensureButton() {
+  if (document.getElementById(BTN_ID) && document.getElementById(SHOT_BTN_ID)) return;
   const title = document.querySelector('h1.ytd-watch-metadata');
   if (!title) return;
 
@@ -273,9 +283,14 @@ window.addEventListener('keydown', (e) => {
 });
 
 browser.runtime.onMessage.addListener((msg) => {
-  if (msg && typeof msg === 'object' && (msg as { type?: string }).type === 'recensio:trigger-capture') {
+  if (
+    msg &&
+    typeof msg === 'object' &&
+    (msg as { type?: string }).type === 'recensio:trigger-capture'
+  ) {
     void takeScreenshot();
   }
+  return undefined;
 });
 
 window.addEventListener('message', (e) => {
@@ -289,7 +304,17 @@ console.log('[Recensio] content script loaded on', location.href);
 injectStyles();
 ensureButton();
 
-const observer = new MutationObserver(() => ensureButton());
+let ensureScheduled = false;
+function scheduleEnsureButton() {
+  if (ensureScheduled) return;
+  ensureScheduled = true;
+  window.setTimeout(() => {
+    ensureScheduled = false;
+    ensureButton();
+  }, 150);
+}
+
+const observer = new MutationObserver(() => scheduleEnsureButton());
 observer.observe(document.body, { childList: true, subtree: true });
 
 document.addEventListener('yt-navigate-finish', () => {

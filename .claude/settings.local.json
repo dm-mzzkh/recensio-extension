@@ -10,7 +10,10 @@
       "Bash(curl -sS https://api.github.com/repos/gurumukhi/youtube-screenshot/contents)",
       "Bash(curl -sS https://api.github.com/repos/gurumukhi/youtube-screenshot/contents/src)",
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(d['type'], d['path'], d.get\\('size','-'\\)\\) for d in data]\")",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(git -C /repos/recensio-extension status --short web-ext-config.js web-ext-config.mjs)",
+      "Bash(git -C /repos/recensio-extension ls-files web-ext-config.js)",
+      "Bash(git -C /repos/recensio-extension rm web-ext-config.js)"
     ]
   }
 }

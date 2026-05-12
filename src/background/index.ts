@@ -35,8 +35,7 @@ function isSaveMessage(m: unknown): m is SaveScreenshotMessage {
   );
 }
 
-browser.runtime.onMessage.addListener(async (msg) => {
-  if (!isSaveMessage(msg)) return;
+async function handleSave(msg: SaveScreenshotMessage) {
   try {
     if (!(await getVideo(msg.videoId))) {
       const meta = await fetchVideoMetadata(msg.url);
@@ -55,4 +54,9 @@ browser.runtime.onMessage.addListener(async (msg) => {
     console.error('[Recensio] save screenshot failed', e);
     return { ok: false, error: (e as Error).message };
   }
+}
+
+browser.runtime.onMessage.addListener((msg) => {
+  if (!isSaveMessage(msg)) return undefined;
+  return handleSave(msg);
 });

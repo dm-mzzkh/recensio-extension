@@ -28,17 +28,30 @@ export function extractVideoId(url: string): string | null {
   }
 }
 
+const OEMBED_TIMEOUT_MS = 8000;
+
 export async function fetchVideoMetadata(url: string): Promise<VideoMetadata | null> {
   const videoId = extractVideoId(url);
   if (!videoId) return null;
   const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
-  const resp = await fetch(oembedUrl);
-  if (!resp.ok) throw new Error(`oEmbed ${resp.status}`);
-  const data = (await resp.json()) as OEmbedResponse;
-  return {
-    videoId,
-    title: data.title,
-    channel: data.author_name,
-    thumbnail: data.thumbnail_url,
-  };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OEMBED_TIMEOUT_MS);
+  try {
+    const resp = await fetch(oembedUrl, { signal: ctrl.signal });
+    if (!resp.ok) throw new Error(`oEmbed ${resp.status}`);
+    const data = (await resp.json()) as OEmbedResponse;
+    return {
+      videoId,
+      title: data.title,
+      channel: data.author_name,
+      thumbnail: data.thumbnail_url,
+    };
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') {
+      throw new Error(`oEmbed timeout after ${OEMBED_TIMEOUT_MS}ms`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
