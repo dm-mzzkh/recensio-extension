@@ -13,7 +13,9 @@ import {
   deleteClip,
   type Screenshot,
   type Clip,
+  type Video,
 } from '../db';
+import { externalUrl } from './oembed';
 
 export interface EditorOptions {
   onSaved?: () => void | Promise<void>;
@@ -42,10 +44,14 @@ function fmtYtDlpTime(sec: number): string {
   return `${pad(h)}:${pad(m)}:${s.toFixed(2).padStart(5, '0')}`;
 }
 
-function ytDlpCommand(videoId: string, startSec: number, endSec: number): string {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
+function ytDlpCommand(video: Video, startSec: number, endSec: number): string {
+  const url = externalUrl(video);
   const range = `*${fmtYtDlpTime(startSec)}-${fmtYtDlpTime(endSec)}`;
   return `yt-dlp -f "bv*+ba/b" --download-sections "${range}" "${url}"`;
+}
+
+function sourceLabel(source: Video['source']): string {
+  return source === 'tiktok' ? 'TikTok' : 'YouTube';
 }
 
 export async function renderEditor(
@@ -85,10 +91,10 @@ export async function renderEditor(
   if (opts.showOpenLink !== false) {
     sub.append(' · ');
     const link = document.createElement('a');
-    link.href = `https://www.youtube.com/watch?v=${videoId}`;
+    link.href = externalUrl(v);
     link.target = '_blank';
     link.rel = 'noopener';
-    link.textContent = 'Open on YouTube ↗';
+    link.textContent = `Open on ${sourceLabel(v.source)} ↗`;
     sub.appendChild(link);
   }
   wrap.appendChild(sub);
@@ -442,10 +448,18 @@ export async function renderEditor(
 
       const range = document.createElement('a');
       range.className = 'clip-range';
-      range.href = `https://youtu.be/${videoId}?t=${Math.floor(c.startSec)}`;
+      // youtu.be supports ?t=… deep links; TikTok does not, so fall back to
+      // the canonical video URL without a timecode for that source.
+      range.href =
+        v!.source === 'youtube'
+          ? `https://youtu.be/${videoId}?t=${Math.floor(c.startSec)}`
+          : externalUrl(v!);
       range.target = '_blank';
       range.rel = 'noopener';
-      range.title = 'Открыть на YouTube с момента начала клипа';
+      range.title =
+        v!.source === 'youtube'
+          ? 'Открыть на YouTube с момента начала клипа'
+          : `Открыть на ${sourceLabel(v!.source)}`;
       range.textContent = `${fmtTime(c.startSec)} – ${fmtTime(c.endSec)}`;
       head.appendChild(range);
 
@@ -462,7 +476,7 @@ export async function renderEditor(
       ytDlp.title = 'Скопировать команду yt-dlp для скачивания клипа';
       ytDlp.textContent = 'yt-dlp';
       ytDlp.addEventListener('click', async () => {
-        const cmd = ytDlpCommand(videoId, c.startSec, c.endSec);
+        const cmd = ytDlpCommand(v!, c.startSec, c.endSec);
         try {
           await navigator.clipboard.writeText(cmd);
           ytDlp.textContent = 'Copied ✓';

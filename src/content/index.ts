@@ -1,4 +1,4 @@
-import { extractVideoId } from '../lib/oembed';
+import { extractVideoRef, type VideoSource } from '../lib/oembed';
 
 const BTN_ID = 'recensio-title-btn';
 const SHOT_BTN_ID = 'recensio-shot-btn';
@@ -6,6 +6,48 @@ const CLIP_BTN_ID = 'recensio-clip-btn';
 const CLIP_PANEL_ID = 'recensio-clip-panel';
 const OVERLAY_ID = 'recensio-overlay';
 const TOAST_ID = 'recensio-toast';
+
+type Layout = 'title-anchor' | 'player-overlay';
+
+interface HostConfig {
+  source: VideoSource;
+  layout: Layout;
+  findAnchor(): HTMLElement | null;
+  observerTarget(): Element;
+  observerOptions: MutationObserverInit;
+  // True when 📷 / ✂ make sense for this source. TikTok is "★ Recensio only"
+  // for now — clips would need a different player API, screenshots may hit
+  // EME on some videos, and short looping clips don't benefit much.
+  supportsCapture: boolean;
+}
+
+const YT_HOST: HostConfig = {
+  source: 'youtube',
+  layout: 'title-anchor',
+  findAnchor: () => document.querySelector<HTMLElement>('h1.ytd-watch-metadata'),
+  observerTarget: () => document.querySelector('ytd-page-manager') ?? document.body,
+  // YouTube swaps direct children of <ytd-page-manager> on SPA nav — childList
+  // alone is enough and avoids the comment/recommendation mutation storm.
+  observerOptions: { childList: true },
+  supportsCapture: true,
+};
+
+const TT_HOST: HostConfig = {
+  source: 'tiktok',
+  // TikTok's class names are bundle-hashed and rotate per release, so any DOM
+  // anchor we picked rotted within weeks. Bypass DOM-name anchoring entirely:
+  // float a single button over the <video> element's bounding rect.
+  layout: 'player-overlay',
+  findAnchor: () => findVideoEl(),
+  observerTarget: () => document.body,
+  // TikTok mounts the player UI deep inside React — childList on <body> alone
+  // never fires. subtree is needed; scheduleEnsureButton() throttles to 150ms
+  // so the cost is bounded even under TikTok's chatty feed re-renders.
+  observerOptions: { childList: true, subtree: true },
+  supportsCapture: false,
+};
+
+const HOST: HostConfig = location.hostname.endsWith('tiktok.com') ? TT_HOST : YT_HOST;
 
 function injectStyles() {
   if (document.getElementById('recensio-styles')) return;
@@ -45,6 +87,22 @@ function injectStyles() {
       border-color: #10b981;
       color: #6ee7b7;
     }
+    .recensio-action.recensio-action--floating {
+      position: fixed;
+      margin-left: 0;
+      z-index: 2147483646;
+      background: rgba(15, 23, 42, 0.78);
+      color: #f8fafc;
+      border-color: rgba(99, 102, 241, 0.9);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+      font: 600 13px system-ui, sans-serif;
+    }
+    .recensio-action.recensio-action--floating:hover {
+      background: rgba(99, 102, 241, 0.95);
+      color: #fff;
+    }
+    .recensio-action.recensio-action--floating[hidden] { display: none; }
     #recensio-clip-panel {
       display: none;
       margin-top: 8px;
@@ -146,9 +204,12 @@ function injectStyles() {
 function findVideoEl(): HTMLVideoElement | null {
   // Match the actively playing element. YouTube can have multiple <video> tags
   // (e.g. shorts/preview); `[src]` filters to the one with a real MSE blob URL.
+  // On TikTok the player can error out before attaching src, so we also accept
+  // a bare <video> as a last resort.
   return (
     document.querySelector<HTMLVideoElement>('video[src]') ??
-    document.querySelector<HTMLVideoElement>('#movie_player video')
+    document.querySelector<HTMLVideoElement>('#movie_player video') ??
+    document.querySelector<HTMLVideoElement>('video')
   );
 }
 
@@ -357,16 +418,18 @@ async function savePendingClip() {
 }
 
 async function toggleClipMark() {
+  if (!HOST.supportsCapture) return;
   const video = findVideoEl();
   if (!video) {
     showToast('Видео не найдено', true);
     return;
   }
-  const videoId = extractVideoId(location.href);
-  if (!videoId) {
+  const ref = extractVideoRef(location.href);
+  if (!ref) {
     showToast('Не страница видео', true);
     return;
   }
+  const { videoId } = ref;
   const t = video.currentTime;
   if (!Number.isFinite(t)) {
     showToast('Время видео недоступно', true);
@@ -407,16 +470,18 @@ async function toggleClipMark() {
 }
 
 async function takeScreenshot() {
+  if (!HOST.supportsCapture) return;
   const video = findVideoEl();
   if (!video) {
     showToast('Видео не найдено', true);
     return;
   }
-  const videoId = extractVideoId(location.href);
-  if (!videoId) {
+  const ref = extractVideoRef(location.href);
+  if (!ref) {
     showToast('Не страница видео', true);
     return;
   }
+  const { videoId } = ref;
   if (video.mediaKeys != null) {
     showToast('Видео защищено DRM — снимок невозможен', true);
     return;
@@ -455,17 +520,83 @@ async function takeScreenshot() {
   }
 }
 
+let trackedVideo: HTMLVideoElement | null = null;
+let videoResizeObserver: ResizeObserver | null = null;
+
+function positionOverlayButton() {
+  const btn = document.getElementById(BTN_ID) as HTMLButtonElement | null;
+  if (!btn) return;
+  btn.hidden = false;
+  const w = btn.offsetWidth || 110;
+
+  const video = findVideoEl();
+  const r = video && video.isConnected ? video.getBoundingClientRect() : null;
+  const usable =
+    r &&
+    r.width >= 80 &&
+    r.height >= 80 &&
+    r.bottom > 0 &&
+    r.top < window.innerHeight &&
+    r.right > 0 &&
+    r.left < window.innerWidth;
+
+  if (usable && r) {
+    btn.style.top = `${Math.max(8, r.top + 12)}px`;
+    btn.style.left = `${Math.max(8, r.right - w - 12)}px`;
+  } else {
+    // Plays-anywhere fallback: pin to viewport top-right so the button is
+    // reachable even when TikTok's player errored out or hasn't mounted yet.
+    btn.style.top = '16px';
+    btn.style.left = `${Math.max(8, window.innerWidth - w - 16)}px`;
+  }
+
+  if (video && trackedVideo !== video) {
+    trackedVideo = video;
+    if (videoResizeObserver) videoResizeObserver.disconnect();
+    videoResizeObserver = new ResizeObserver(() => positionOverlayButton());
+    videoResizeObserver.observe(video);
+  }
+}
+
+function ensurePlayerOverlayButton() {
+  let btn = document.getElementById(BTN_ID) as HTMLButtonElement | null;
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = BTN_ID;
+    btn.className = 'recensio-action recensio-action--floating';
+    btn.type = 'button';
+    btn.title = 'Edit in Recensio';
+    btn.textContent = '★ Recensio';
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      openOverlay();
+    });
+    document.body.appendChild(btn);
+  } else if (btn.parentElement !== document.body) {
+    // React re-parented us. Move back to <body> so fixed positioning is sane.
+    document.body.appendChild(btn);
+  }
+  positionOverlayButton();
+}
+
 function ensureButton() {
-  if (
-    document.getElementById(BTN_ID) &&
-    document.getElementById(SHOT_BTN_ID) &&
-    document.getElementById(CLIP_BTN_ID) &&
-    document.getElementById(CLIP_PANEL_ID)
-  ) {
+  if (HOST.layout === 'player-overlay') {
+    ensurePlayerOverlayButton();
     return;
   }
-  const title = document.querySelector<HTMLElement>('h1.ytd-watch-metadata');
-  if (!title) return;
+
+  const needsCapture = HOST.supportsCapture;
+  const fullyMounted =
+    document.getElementById(BTN_ID) &&
+    (!needsCapture ||
+      (document.getElementById(SHOT_BTN_ID) &&
+        document.getElementById(CLIP_BTN_ID) &&
+        document.getElementById(CLIP_PANEL_ID)));
+  if (fullyMounted) return;
+
+  const anchor = HOST.findAnchor();
+  if (!anchor) return;
 
   if (!document.getElementById(BTN_ID)) {
     const btn = document.createElement('button');
@@ -479,8 +610,10 @@ function ensureButton() {
       e.preventDefault();
       openOverlay();
     });
-    title.appendChild(btn);
+    anchor.appendChild(btn);
   }
+
+  if (!needsCapture) return;
 
   if (!document.getElementById(SHOT_BTN_ID)) {
     const shot = document.createElement('button');
@@ -494,7 +627,7 @@ function ensureButton() {
       e.preventDefault();
       void takeScreenshot();
     });
-    title.appendChild(shot);
+    anchor.appendChild(shot);
   }
 
   if (!document.getElementById(CLIP_BTN_ID)) {
@@ -508,17 +641,17 @@ function ensureButton() {
       e.preventDefault();
       void toggleClipMark();
     });
-    title.appendChild(clip);
+    anchor.appendChild(clip);
   }
 
   if (!document.getElementById(CLIP_PANEL_ID)) {
     const panel = document.createElement('div');
     panel.id = CLIP_PANEL_ID;
-    // Place panel right after the title so it sits under the action buttons.
-    if (title.parentElement) {
-      title.parentElement.insertBefore(panel, title.nextSibling);
+    // Place panel right after the anchor so it sits under the action buttons.
+    if (anchor.parentElement) {
+      anchor.parentElement.insertBefore(panel, anchor.nextSibling);
     } else {
-      title.appendChild(panel);
+      anchor.appendChild(panel);
     }
   }
 
@@ -530,10 +663,16 @@ function closeOverlay() {
   document.getElementById(OVERLAY_ID)?.remove();
 }
 
+function buildEditorUrl(videoId: string): string {
+  const base = browser.runtime.getURL('editor/index.html');
+  return `${base}?id=${encodeURIComponent(videoId)}&url=${encodeURIComponent(location.href)}&source=${HOST.source}`;
+}
+
 function openOverlay() {
   closeOverlay();
-  const videoId = extractVideoId(location.href);
-  if (!videoId) return;
+  const ref = extractVideoRef(location.href);
+  if (!ref) return;
+  const editorUrl = buildEditorUrl(ref.videoId);
 
   const overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
@@ -553,8 +692,23 @@ function openOverlay() {
   wrap.appendChild(closeBtn);
 
   const iframe = document.createElement('iframe');
-  const url = browser.runtime.getURL('editor/index.html');
-  iframe.src = `${url}?id=${encodeURIComponent(videoId)}&url=${encodeURIComponent(location.href)}`;
+  iframe.src = editorUrl;
+
+  // CSP/frame-ancestors on some hosts (TikTok in particular) can refuse to
+  // render the moz-extension iframe. We can't read the cross-origin frame to
+  // detect that synchronously, so we race: if the iframe hasn't loaded by the
+  // deadline, assume blocked and open the editor in a new tab instead.
+  let iframeLoaded = false;
+  iframe.addEventListener('load', () => {
+    iframeLoaded = true;
+  });
+  window.setTimeout(() => {
+    if (!iframeLoaded && document.getElementById(OVERLAY_ID)) {
+      closeOverlay();
+      void browser.runtime.sendMessage({ type: 'recensio:open-editor-tab', url: editorUrl });
+    }
+  }, 1500);
+
   wrap.appendChild(iframe);
 
   overlay.appendChild(wrap);
@@ -603,19 +757,44 @@ function scheduleEnsureButton() {
 // document.body + subtree fires on every comment/recommendation update,
 // which is hundreds of useless callbacks per minute. The page-manager
 // swap on SPA navigation is the only mutation we actually care about.
-const observer = new MutationObserver(() => scheduleEnsureButton());
-const observerTarget =
-  document.querySelector('ytd-page-manager') ?? document.body;
-observer.observe(observerTarget, { childList: true });
-
-document.addEventListener('yt-navigate-finish', () => {
+let lastUrl = location.href;
+function onUrlMaybeChanged() {
+  if (location.href === lastUrl) return;
+  lastUrl = location.href;
   closeOverlay();
   pendingClip = null;
   window.clearTimeout(toastTimer);
   ensureButton();
+}
+
+const observer = new MutationObserver(() => {
+  onUrlMaybeChanged();
+  scheduleEnsureButton();
 });
+observer.observe(HOST.observerTarget(), HOST.observerOptions);
+
+if (HOST.source === 'youtube') {
+  // YouTube fires a dedicated SPA-nav event — cheaper than relying on
+  // mutation-driven URL polling for that source.
+  document.addEventListener('yt-navigate-finish', () => {
+    lastUrl = location.href;
+    closeOverlay();
+    pendingClip = null;
+    window.clearTimeout(toastTimer);
+    ensureButton();
+  });
+}
+
+if (HOST.layout === 'player-overlay') {
+  // Player rect can shift on scroll, viewport resize, or fullscreen toggle.
+  // Re-positioning is cheap (one getBoundingClientRect + 2 style writes).
+  window.addEventListener('scroll', positionOverlayButton, { passive: true, capture: true });
+  window.addEventListener('resize', positionOverlayButton);
+  document.addEventListener('fullscreenchange', positionOverlayButton);
+}
 
 window.addEventListener('pagehide', () => {
   observer.disconnect();
+  videoResizeObserver?.disconnect();
   window.clearTimeout(toastTimer);
 });

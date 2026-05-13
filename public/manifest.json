@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Recensio",
   "version": "0.1.0",
-  "description": "Save YouTube videos with tags, ratings, and reviews",
+  "description": "Save YouTube and TikTok videos with tags, ratings, and reviews",
   "browser_specific_settings": {
     "gecko": {
       "id": "recensio@local",
@@ -13,7 +13,7 @@
     }
   },
   "permissions": ["storage", "tabs", "nativeMessaging"],
-  "host_permissions": ["https://www.youtube.com/*"],
+  "host_permissions": ["https://www.youtube.com/*", "https://www.tiktok.com/*"],
   "action": {
     "default_popup": "popup/index.html",
     "default_title": "Recensio"
@@ -21,7 +21,7 @@
   "commands": {
     "take-screenshot": {
       "suggested_key": { "default": "Alt+Shift+S" },
-      "description": "Сохранить скриншот текущего кадра видео YouTube"
+      "description": "Сохранить скриншот текущего кадра видео YouTube (на TikTok недоступно)"
     },
     "take-clip-mark": {
       "suggested_key": { "default": "Alt+Shift+C" },
@@ -33,14 +33,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/watch*"],
+      "matches": ["https://www.youtube.com/watch*", "https://www.tiktok.com/*/video/*"],
       "js": ["content/index.js"]
     }
   ],
   "web_accessible_resources": [
     {
       "resources": ["editor/index.html", "editor/main.js"],
-      "matches": ["https://www.youtube.com/*"]
+      "matches": ["https://www.youtube.com/*", "https://www.tiktok.com/*"]
     }
   ],
   "icons": {

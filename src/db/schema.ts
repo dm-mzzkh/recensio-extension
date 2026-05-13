@@ -1,7 +1,11 @@
 import Dexie, { type Table } from 'dexie';
 
+export type VideoSource = 'youtube' | 'tiktok';
+
 export interface Video {
   videoId: string;
+  source: VideoSource;
+  url?: string;
   title: string;
   channel: string;
   thumbnail: string;
@@ -90,6 +94,18 @@ export class RecensioDB extends Dexie {
     this.version(6).stores({
       collections: null,
       collectionItems: null,
+    });
+    // v7 introduces multi-source videos (YouTube + TikTok). No new index;
+    // backfill existing rows as YouTube and reconstruct their canonical URL
+    // so externalUrl() returns the right link.
+    this.version(7).upgrade(async (tx) => {
+      await tx
+        .table('videos')
+        .toCollection()
+        .modify((v: Video) => {
+          if (!v.source) v.source = 'youtube';
+          if (!v.url) v.url = `https://www.youtube.com/watch?v=${v.videoId}`;
+        });
     });
   }
 }

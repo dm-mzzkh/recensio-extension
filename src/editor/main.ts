@@ -13,15 +13,22 @@ function notifyParent(type: string) {
 async function init() {
   const params = new URL(location.href).searchParams;
   const videoId = params.get('id');
-  const watchUrl = params.get('url') ?? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : null);
-
-  if (!videoId || !watchUrl) {
+  if (!videoId) {
     root.innerHTML = '<p class="empty">No video id provided</p>';
     return;
   }
 
   let video = await getVideo(videoId);
+  // Prefer the URL the caller passed (covers fresh saves), then the URL
+  // we already persisted (covers re-opens). No fallback to a guessed YT URL —
+  // a TikTok id parsed against a youtube.com URL would 404 on oEmbed.
+  const watchUrl = params.get('url') ?? video?.url ?? null;
+
   if (!video) {
+    if (!watchUrl) {
+      root.innerHTML = '<p class="empty">No video URL provided</p>';
+      return;
+    }
     root.innerHTML = '<p class="status">Loading metadata…</p>';
     try {
       const meta = await fetchVideoMetadata(watchUrl);

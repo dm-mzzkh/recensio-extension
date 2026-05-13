@@ -6,7 +6,7 @@ import {
   listTags,
   normalizeTag,
 } from '../db';
-import { extractVideoId, fetchVideoMetadata, type VideoMetadata } from '../lib/oembed';
+import { extractVideoRef, fetchVideoMetadata, type VideoMetadata } from '../lib/oembed';
 
 const titleEl = document.getElementById('title')!;
 const statusEl = document.getElementById('status')!;
@@ -17,7 +17,9 @@ const saveBtn = document.getElementById('save') as HTMLButtonElement;
 const libraryBtn = document.getElementById('library') as HTMLButtonElement;
 
 let currentVideoId: string | null = null;
-let currentMeta: Pick<VideoMetadata, 'title' | 'channel' | 'thumbnail'> | null = null;
+let currentMeta:
+  | (Pick<VideoMetadata, 'title' | 'channel' | 'thumbnail' | 'source'> & { url?: string })
+  | null = null;
 let pendingTags: string[] = [];
 
 function renderTags() {
@@ -103,14 +105,15 @@ async function init() {
     saveBtn.disabled = true;
     return;
   }
-  const videoId = extractVideoId(tab.url);
-  if (!videoId) {
+  const ref = extractVideoRef(tab.url);
+  if (!ref) {
     titleEl.textContent = '—';
-    statusEl.textContent = 'Not a YouTube video page';
+    statusEl.textContent = 'Not a YouTube or TikTok video page';
     saveBtn.disabled = true;
     tagInput.disabled = true;
     return;
   }
+  const { videoId, source } = ref;
   currentVideoId = videoId;
   await refreshTagSuggestions();
 
@@ -120,6 +123,8 @@ async function init() {
       title: existing.title,
       channel: existing.channel,
       thumbnail: existing.thumbnail,
+      source: existing.source,
+      url: existing.url,
     };
     titleEl.textContent = existing.title;
     statusEl.textContent = `Already saved · ${existing.channel}`;
@@ -130,7 +135,10 @@ async function init() {
     return;
   }
 
-  titleEl.textContent = tab.title?.replace(/ - YouTube$/, '') ?? '…';
+  const rawTitle = tab.title ?? '';
+  titleEl.textContent =
+    (source === 'tiktok' ? rawTitle.replace(/ \| TikTok$/, '') : rawTitle.replace(/ - YouTube$/, '')) ||
+    '…';
   statusEl.textContent = 'Loading metadata…';
   try {
     const meta = await fetchVideoMetadata(tab.url);

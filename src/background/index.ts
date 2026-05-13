@@ -128,6 +128,35 @@ function isStartRecordingMessage(m: unknown): m is StartRecordingMessage {
   );
 }
 
+interface OpenEditorTabMessage {
+  type: 'recensio:open-editor-tab';
+  url: string;
+}
+
+function isOpenEditorTabMessage(m: unknown): m is OpenEditorTabMessage {
+  return (
+    typeof m === 'object' &&
+    m !== null &&
+    (m as { type?: unknown }).type === 'recensio:open-editor-tab' &&
+    typeof (m as { url?: unknown }).url === 'string'
+  );
+}
+
+async function handleOpenEditorTab(msg: OpenEditorTabMessage) {
+  try {
+    // Only accept moz-extension:// URLs we ourselves produced — never let a
+    // content script trick the background into opening an arbitrary URL.
+    const expectedPrefix = browser.runtime.getURL('editor/index.html');
+    if (!msg.url.startsWith(expectedPrefix)) {
+      return { ok: false, error: 'unexpected url' };
+    }
+    await browser.tabs.create({ url: msg.url });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 const NATIVE_HOST = 'com.recensio.ytdl';
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -337,5 +366,6 @@ browser.runtime.onMessage.addListener((msg) => {
   if (isSaveMessage(msg)) return handleSave(msg);
   if (isSaveClipMessage(msg)) return handleSaveClip(msg);
   if (isStartRecordingMessage(msg)) return handleStartRecording(msg);
+  if (isOpenEditorTabMessage(msg)) return handleOpenEditorTab(msg);
   return undefined;
 });

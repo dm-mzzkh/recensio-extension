@@ -1,6 +1,9 @@
 import { db, type Video } from './schema';
 
-export type VideoMeta = Pick<Video, 'videoId' | 'title' | 'channel' | 'thumbnail' | 'durationSec'>;
+export type VideoMeta = Pick<
+  Video,
+  'videoId' | 'source' | 'url' | 'title' | 'channel' | 'thumbnail' | 'durationSec'
+>;
 
 export async function getVideo(videoId: string): Promise<Video | undefined> {
   return db.videos.get(videoId);
