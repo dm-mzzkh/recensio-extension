@@ -12,6 +12,15 @@ export async function listTags(): Promise<Tag[]> {
   return db.tags.orderBy('name').toArray();
 }
 
+export async function listTagsWithCounts(): Promise<Array<Tag & { count: number }>> {
+  const tags = await listTags();
+  const counts = new Map<number, number>();
+  await db.videoTags.each(({ tagId }) => {
+    counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
+  });
+  return tags.map((t) => ({ ...t, count: t.id != null ? counts.get(t.id) ?? 0 : 0 }));
+}
+
 export async function findTagsByPrefix(prefix: string, limit = 10): Promise<Tag[]> {
   const normalized = normalizeTag(prefix);
   if (!normalized) return [];

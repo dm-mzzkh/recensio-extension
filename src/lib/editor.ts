@@ -4,7 +4,7 @@ import {
   setVideoTags,
   updateReview,
   deleteVideo,
-  listTags,
+  listTagsWithCounts,
   normalizeTag,
   listScreenshots,
   deleteScreenshot,
@@ -65,7 +65,7 @@ export async function renderEditor(
 
   const tags = await getVideoTags(videoId);
   let pendingTags = tags.map((t) => t.name);
-  const allTags = await listTags();
+  const allTags = await listTagsWithCounts();
 
   const wrap = document.createElement('div');
   wrap.className = 'detail';
@@ -121,36 +121,183 @@ export async function renderEditor(
   }
   renderPendingTags();
 
-  const datalistId = `editor-tags-${Math.random().toString(36).slice(2)}`;
+  const tagInputWrap = document.createElement('div');
+  tagInputWrap.style.position = 'relative';
+  wrap.appendChild(tagInputWrap);
+
   const tagInput = document.createElement('input');
   tagInput.type = 'text';
-  tagInput.setAttribute('list', datalistId);
   tagInput.placeholder = 'Add tag (Enter or comma)';
   tagInput.autocomplete = 'off';
-  tagInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const norm = normalizeTag(tagInput.value);
-      if (norm && !pendingTags.includes(norm)) {
-        pendingTags.push(norm);
-        renderPendingTags();
+  tagInputWrap.appendChild(tagInput);
+
+  const suggestBox = document.createElement('div');
+  Object.assign(suggestBox.style, {
+    position: 'absolute',
+    left: '0',
+    right: '0',
+    top: 'calc(100% + 2px)',
+    background: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '4px',
+    boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
+    zIndex: '50',
+    display: 'none',
+    overflow: 'hidden',
+  });
+  tagInputWrap.appendChild(suggestBox);
+
+  type Suggestion = { name: string; count: number; exists: boolean };
+  let suggestions: Suggestion[] = [];
+  let activeIdx = -1;
+
+  function rankSuggestions(rawQuery: string): Suggestion[] {
+    const q = normalizeTag(rawQuery);
+    if (!q) return [];
+    const used = new Set(pendingTags);
+    const matches: Array<{ s: Suggestion; rank: number }> = [];
+    for (const t of allTags) {
+      if (used.has(t.name)) continue;
+      let rank: number;
+      if (t.name === q) rank = 0;
+      else if (t.name.startsWith(q)) rank = 1;
+      else if (t.name.includes(q)) rank = 2;
+      else continue;
+      matches.push({ s: { name: t.name, count: t.count, exists: true }, rank });
+    }
+    matches.sort((a, b) => a.rank - b.rank || b.s.count - a.s.count || a.s.name.localeCompare(b.s.name));
+    const top = matches.slice(0, 5).map((m) => m.s);
+    const hasExact = top.some((s) => s.name === q);
+    if (!hasExact && !used.has(q)) {
+      top.push({ name: q, count: 0, exists: false });
+    }
+    return top;
+  }
+
+  function renderSuggestions() {
+    suggestBox.innerHTML = '';
+    if (suggestions.length === 0) {
+      suggestBox.style.display = 'none';
+      return;
+    }
+    suggestBox.style.display = 'block';
+    suggestions.forEach((s, i) => {
+      const row = document.createElement('div');
+      Object.assign(row.style, {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '6px 10px',
+        cursor: 'pointer',
+        fontSize: '13px',
+        background: i === activeIdx ? '#1e1b4b' : 'transparent',
+        color: '#f8fafc',
+      });
+      row.addEventListener('mouseenter', () => {
+        activeIdx = i;
+        renderSuggestions();
+      });
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        acceptSuggestion(i);
+      });
+
+      const name = document.createElement('span');
+      name.style.flex = '1';
+      name.style.overflow = 'hidden';
+      name.style.textOverflow = 'ellipsis';
+      name.style.whiteSpace = 'nowrap';
+      if (s.exists) {
+        name.textContent = `#${s.name}`;
+      } else {
+        const plus = document.createElement('span');
+        plus.style.color = '#94a3b8';
+        plus.style.marginRight = '4px';
+        plus.textContent = '+ new:';
+        name.appendChild(plus);
+        const t = document.createElement('span');
+        t.textContent = `#${s.name}`;
+        name.appendChild(t);
       }
-      tagInput.value = '';
+      row.appendChild(name);
+
+      if (s.exists) {
+        const count = document.createElement('span');
+        count.style.fontSize = '11px';
+        count.style.color = '#94a3b8';
+        count.style.fontVariantNumeric = 'tabular-nums';
+        count.textContent = `${s.count}`;
+        row.appendChild(count);
+      }
+
+      suggestBox.appendChild(row);
+    });
+  }
+
+  function refreshSuggestions() {
+    suggestions = rankSuggestions(tagInput.value);
+    activeIdx = suggestions.length > 0 ? 0 : -1;
+    renderSuggestions();
+  }
+
+  function acceptSuggestion(idx: number) {
+    const s = suggestions[idx];
+    if (!s) return;
+    if (!pendingTags.includes(s.name)) {
+      pendingTags.push(s.name);
+      renderPendingTags();
+    }
+    tagInput.value = '';
+    suggestions = [];
+    activeIdx = -1;
+    renderSuggestions();
+    tagInput.focus();
+  }
+
+  function commitTyped() {
+    const norm = normalizeTag(tagInput.value);
+    if (norm && !pendingTags.includes(norm)) {
+      pendingTags.push(norm);
+      renderPendingTags();
+    }
+    tagInput.value = '';
+    suggestions = [];
+    activeIdx = -1;
+    renderSuggestions();
+  }
+
+  tagInput.addEventListener('input', refreshSuggestions);
+  tagInput.addEventListener('focus', refreshSuggestions);
+  tagInput.addEventListener('blur', () => {
+    window.setTimeout(() => {
+      suggestBox.style.display = 'none';
+    }, 120);
+  });
+  tagInput.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && suggestions.length) {
+      e.preventDefault();
+      activeIdx = (activeIdx + 1) % suggestions.length;
+      renderSuggestions();
+    } else if (e.key === 'ArrowUp' && suggestions.length) {
+      e.preventDefault();
+      activeIdx = (activeIdx - 1 + suggestions.length) % suggestions.length;
+      renderSuggestions();
+    } else if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      if (activeIdx >= 0 && suggestions[activeIdx]) {
+        acceptSuggestion(activeIdx);
+      } else {
+        commitTyped();
+      }
+    } else if (e.key === 'Escape') {
+      suggestions = [];
+      activeIdx = -1;
+      renderSuggestions();
     } else if (e.key === 'Backspace' && tagInput.value === '' && pendingTags.length) {
       pendingTags.pop();
       renderPendingTags();
     }
   });
-  wrap.appendChild(tagInput);
-
-  const datalist = document.createElement('datalist');
-  datalist.id = datalistId;
-  for (const t of allTags) {
-    const opt = document.createElement('option');
-    opt.value = t.name;
-    datalist.appendChild(opt);
-  }
-  wrap.appendChild(datalist);
 
   // Rating
   const ratingLabel = document.createElement('label');
