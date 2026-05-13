@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Recensio Graph</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid #1e293b;
+      flex-shrink: 0;
+    }
+    .head h1 { font-size: 18px; margin: 0; flex: 1; }
+    .head a, .head button {
+      background: #1e293b; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 4px;
+      padding: 5px 10px; font-size: 12px;
+      text-decoration: none; cursor: pointer;
+      font-family: inherit;
+    }
+    .head a:hover, .head button:hover { background: #334155; border-color: #475569; }
+
+    .legend { display: flex; gap: 12px; align-items: center; font-size: 11px; color: #94a3b8; }
+    .legend-item { display: inline-flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 5px; display: inline-block; }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 20px;
+      border-bottom: 1px solid #1e293b;
+      font-size: 12px;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+    .filters label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+    .filters input[type="checkbox"] { accent-color: #6366f1; }
+    .filters .spacer { flex: 1; }
+    .filters .hint { font-size: 11px; }
+
+    .stage { flex: 1; position: relative; overflow: hidden; }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    canvas.dragging { cursor: grabbing; }
+
+    .tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(15, 23, 42, 0.96);
+      color: #f8fafc;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      max-width: 280px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      transition: opacity 0.1s;
+      z-index: 10;
+    }
+    .tooltip.visible { opacity: 1; }
+    .tooltip-title { font-weight: 600; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; }
+    .tooltip-sub { font-size: 11px; color: #94a3b8; }
+
+    .empty {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #64748b; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <h1>Recensio Graph</h1>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:#818cf8"></span>video</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span>tag</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#34d399"></span>clip</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#f472b6"></span>screenshot</span>
+    </div>
+    <a href="../library/index.html">← Library</a>
+  </div>
+  <div class="filters">
+    <label><input type="checkbox" id="show-tags" checked /> Tags</label>
+    <label><input type="checkbox" id="show-clips" checked /> Clips</label>
+    <label><input type="checkbox" id="show-shots" checked /> Screenshots</label>
+    <div class="spacer"></div>
+    <span class="hint">Drag to pan · wheel to zoom · click video to open</span>
+    <button id="reset-view" type="button">Reset</button>
+  </div>
+  <div class="stage">
+    <canvas id="graph"></canvas>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="empty" id="empty" style="display:none">Нет видео в библиотеке.</div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>

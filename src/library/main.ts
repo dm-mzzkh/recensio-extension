@@ -178,4 +178,24 @@ ratingMaxInput.addEventListener('change', () => {
   void refresh();
 });
 
-void refresh();
+function applyHash() {
+  const h = window.location.hash.replace(/^#/, '');
+  if (!h) return;
+  const params = new URLSearchParams(h);
+  const tag = params.get('tag');
+  if (tag) {
+    const norm = normalizeTag(tag);
+    if (norm && !filters.tagNames.includes(norm)) {
+      filters.tagNames.push(norm);
+      renderTagFilters();
+    }
+  }
+  const v = params.get('video');
+  if (v) selectedId = v;
+}
+
+applyHash();
+
+void refresh().then(() => {
+  if (selectedId) void renderDetail();
+});

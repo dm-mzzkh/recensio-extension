@@ -6,7 +6,16 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0 auto; padding: 24px; max-width: 1200px; font-size: 13px; }
-    h1 { font-size: 20px; margin: 0 0 16px; }
+    h1 { font-size: 20px; margin: 0; }
+    .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .page-head h1 { flex: 1; }
+    .page-head a.page-btn {
+      background: #1e293b; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 4px;
+      padding: 6px 12px; font-size: 13px;
+      text-decoration: none;
+    }
+    .page-head a.page-btn:hover { background: #334155; border-color: #475569; }
     .toolbar { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     input[type="text"], input[type="number"], textarea {
       background: #1e293b; color: #f8fafc; border: 1px solid #334155;
@@ -144,7 +153,10 @@
   </style>
 </head>
 <body>
-  <h1>Recensio Library</h1>
+  <div class="page-head">
+    <h1>Recensio Library</h1>
+    <a class="page-btn" href="../graph/index.html">📊 Граф</a>
+  </div>
   <div class="toolbar">
     <input id="query" type="text" placeholder="Search title or channel…" />
     <input id="tag-filter-input" type="text" list="all-tags-list" placeholder="Filter by tag (Enter)" autocomplete="off" />

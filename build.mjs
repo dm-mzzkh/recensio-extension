@@ -12,6 +12,7 @@ const ctx = await esbuild.context({
     'popup/main': 'src/popup/main.ts',
     'library/main': 'src/library/main.ts',
     'editor/main': 'src/editor/main.ts',
+    'graph/main': 'src/graph/main.ts',
     'background/index': 'src/background/index.ts',
     'content/index': 'src/content/index.ts',
   },
@@ -29,6 +30,7 @@ async function copyStatic() {
   await cp('src/popup/index.html', `${outdir}/popup/index.html`);
   await cp('src/library/index.html', `${outdir}/library/index.html`);
   await cp('src/editor/index.html', `${outdir}/editor/index.html`);
+  await cp('src/graph/index.html', `${outdir}/graph/index.html`);
 }
 
 if (watch) {
