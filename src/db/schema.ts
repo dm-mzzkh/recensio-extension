@@ -24,21 +24,6 @@ export interface VideoTag {
   tagId: number;
 }
 
-export interface Collection {
-  id?: number;
-  name: string;
-  cover?: string;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface CollectionItem {
-  id?: number;
-  collectionId: number;
-  videoId: string;
-  position: number;
-}
-
 export interface Screenshot {
   id?: number;
   videoId: string;
@@ -73,8 +58,6 @@ export class RecensioDB extends Dexie {
   videos!: Table<Video, string>;
   tags!: Table<Tag, number>;
   videoTags!: Table<VideoTag, number>;
-  collections!: Table<Collection, number>;
-  collectionItems!: Table<CollectionItem, number>;
   screenshots!: Table<Screenshot, number>;
   clips!: Table<Clip, number>;
 
@@ -102,6 +85,11 @@ export class RecensioDB extends Dexie {
     // if blob, otherwise pending".
     this.version(5).stores({
       clips: '++id, videoId, startSec, createdAt, status, [videoId+startSec]',
+    });
+    // v6 drops collections/collectionItems — feature was never wired to UI.
+    this.version(6).stores({
+      collections: null,
+      collectionItems: null,
     });
   }
 }

@@ -6,7 +6,6 @@ export interface SearchFilters {
   tagNames?: string[]; // AND match
   ratingMin?: number;
   ratingMax?: number;
-  collectionId?: number;
 }
 
 function intersect<T>(prev: Set<T> | null, next: Set<T>): Set<T> {
@@ -30,16 +29,6 @@ export async function searchVideos(filters: SearchFilters): Promise<Video[]> {
       candidateIds = intersect(candidateIds, ids);
       if (!candidateIds.size) return [];
     }
-  }
-
-  if (filters.collectionId != null) {
-    const items = await db.collectionItems
-      .where('collectionId')
-      .equals(filters.collectionId)
-      .toArray();
-    const ids = new Set(items.map((i) => i.videoId));
-    candidateIds = intersect(candidateIds, ids);
-    if (!candidateIds.size) return [];
   }
 
   const all = candidateIds
