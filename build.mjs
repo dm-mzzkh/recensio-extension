@@ -31,6 +31,9 @@ async function copyStatic() {
   await cp('src/library/index.html', `${outdir}/library/index.html`);
   await cp('src/editor/index.html', `${outdir}/editor/index.html`);
   await cp('src/graph/index.html', `${outdir}/graph/index.html`);
+  // Shared editor stylesheet, linked by both editor/index.html and
+  // library/index.html so the .detail subtree looks identical in both.
+  await cp('src/lib/editor.css', `${outdir}/lib/editor.css`);
 }
 
 if (watch) {

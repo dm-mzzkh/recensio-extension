@@ -14,6 +14,9 @@ export interface Video {
   updatedAt: number;
   rating?: number; // 1-10
   review?: string;
+  // Last time source-platform tags were pulled via yt-dlp. `undefined` means
+  // we've never fetched, so the editor should kick off an initial fetch.
+  systemTagsFetchedAt?: number;
 }
 
 export interface Tag {
@@ -35,6 +38,16 @@ export interface Screenshot {
   width: number;
   height: number;
   timeSec: number;
+  createdAt: number;
+}
+
+// Tags coming from the source platform (YouTube `.tags[]`, TikTok hashtags
+// parsed from description). Read-only in the UI — distinct from user-managed
+// `tags`/`videoTags` so promoting / filtering stays explicit.
+export interface SystemTag {
+  id?: number;
+  videoId: string;
+  name: string;
   createdAt: number;
 }
 
@@ -64,6 +77,7 @@ export class RecensioDB extends Dexie {
   videoTags!: Table<VideoTag, number>;
   screenshots!: Table<Screenshot, number>;
   clips!: Table<Clip, number>;
+  systemTags!: Table<SystemTag, number>;
 
   constructor() {
     super('recensio');
@@ -106,6 +120,13 @@ export class RecensioDB extends Dexie {
           if (!v.source) v.source = 'youtube';
           if (!v.url) v.url = `https://www.youtube.com/watch?v=${v.videoId}`;
         });
+    });
+    // v8 adds systemTags: read-only tags fetched from the source platform
+    // (YouTube `.tags[]`, TikTok hashtags from description) via yt-dlp.
+    // No backfill — existing videos will be marked "never fetched" and the
+    // editor will pull them on next open.
+    this.version(8).stores({
+      systemTags: '++id, videoId, [videoId+name]',
     });
   }
 }

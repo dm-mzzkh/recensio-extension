@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <title>Recensio Library</title>
+  <link rel="stylesheet" href="../lib/editor.css" />
   <style>
+    /* Library page chrome: page header, search/filter toolbar, video list,
+     * and the sticky #detail container that hosts renderEditor(). All
+     * .detail-subtree rules (.chip, .chips, .sys-*, .clip*, .shot*, …) come
+     * from ../lib/editor.css so the editor looks identical to the standalone
+     * editor/index.html page. */
     * { box-sizing: border-box; }
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0 auto; padding: 24px; max-width: 1200px; font-size: 13px; }
     h1 { font-size: 20px; margin: 0; }
@@ -17,20 +23,18 @@
     }
     .page-head a.page-btn:hover { background: #334155; border-color: #475569; }
     .toolbar { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-    input[type="text"], input[type="number"], textarea {
+    .toolbar input[type="text"], .toolbar input[type="number"] {
       background: #1e293b; color: #f8fafc; border: 1px solid #334155;
       border-radius: 4px; padding: 6px 10px; font-size: 13px; font-family: inherit;
     }
-    input:focus, textarea:focus { outline: none; border-color: #6366f1; }
+    .toolbar input:focus { outline: none; border-color: #6366f1; }
     .toolbar #query { flex: 1; min-width: 200px; }
     .toolbar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
     .toolbar input[type="number"] { width: 60px; }
 
     #tag-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; min-height: 4px; }
-    .chip { display: inline-flex; align-items: center; gap: 2px; background: #334155; color: #e2e8f0; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
+    /* Modifier only — base .chip / .chip-remove live in ../lib/editor.css. */
     .chip--filter { background: #4338ca; }
-    .chip-remove { background: transparent; color: inherit; border: 0; cursor: pointer; padding: 0 2px; opacity: 0.7; font-size: 14px; line-height: 1; }
-    .chip-remove:hover { opacity: 1; color: #f87171; }
 
     .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
     @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
@@ -48,108 +52,6 @@
     .card-rating { font-size: 11px; color: #fbbf24; font-weight: 600; }
 
     #detail { background: #1e293b; padding: 16px; border-radius: 6px; min-height: 400px; position: sticky; top: 24px; }
-    .detail-thumb { width: 100%; max-height: 220px; object-fit: cover; border-radius: 4px; }
-    .detail h2 { font-size: 16px; margin: 12px 0 4px; }
-    .detail-sub { font-size: 12px; color: #94a3b8; margin: 0 0 12px; }
-    .detail-sub a { color: #818cf8; text-decoration: none; }
-    .detail-sub a:hover { text-decoration: underline; }
-    .detail label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; margin: 14px 0 4px; }
-    .chips { display: flex; flex-wrap: wrap; gap: 4px; min-height: 4px; margin-bottom: 6px; }
-    .detail input[type="text"], .detail textarea { width: 100%; background: #0f172a; }
-    .review { resize: vertical; min-height: 120px; line-height: 1.45; }
-    .rating-row { display: flex; align-items: center; gap: 12px; }
-    .rating-slider { flex: 1; }
-    .rating-value { font-weight: 700; min-width: 56px; color: #fbbf24; text-align: right; }
-    .actions { display: flex; gap: 8px; margin-top: 16px; }
-    .actions button { padding: 8px 14px; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; background: #6366f1; color: white; }
-    .actions button:hover:not(:disabled) { background: #4f46e5; }
-    .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .actions button.danger { background: #475569; }
-    .actions button.danger:hover { background: #b91c1c; }
-    .empty { text-align: center; color: #64748b; padding: 32px 16px; margin: 0; }
-
-    .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
-    .shots-empty { grid-column: 1 / -1; font-size: 12px; color: #64748b; margin: 0; padding: 8px 0; }
-    .shot { position: relative; border-radius: 4px; overflow: hidden; background: #0f172a; cursor: pointer; }
-    .shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
-    .shot-time {
-      position: absolute; left: 4px; bottom: 4px;
-      background: rgba(15, 23, 42, 0.85); color: #f8fafc;
-      font: 600 11px system-ui, sans-serif;
-      padding: 2px 5px; border-radius: 3px;
-    }
-    .shot-del {
-      position: absolute; top: 4px; right: 4px;
-      width: 20px; height: 20px;
-      background: rgba(15, 23, 42, 0.85); color: #f8fafc;
-      border: 0; border-radius: 10px; cursor: pointer;
-      font-size: 14px; line-height: 1; padding: 0;
-      opacity: 0; transition: opacity 0.15s;
-    }
-    .shot:hover .shot-del { opacity: 1; }
-    .shot-del:hover { background: #b91c1c; }
-    .shot-lightbox {
-      position: fixed; inset: 0; z-index: 2147483647;
-      background: rgba(0, 0, 0, 0.9);
-      display: flex; align-items: center; justify-content: center;
-      cursor: zoom-out;
-    }
-    .shot-lightbox img { max-width: 96vw; max-height: 96vh; border-radius: 6px; }
-
-    .clips { display: flex; flex-direction: column; gap: 8px; }
-    .clips-empty { font-size: 12px; color: #64748b; margin: 0; padding: 8px 0; }
-    .clip { background: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 8px; }
-    .clip-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-    .clip-range { font-weight: 700; color: #fbbf24; text-decoration: none; font-variant-numeric: tabular-nums; }
-    .clip-range:hover { text-decoration: underline; }
-    .clip-dur { font-size: 11px; color: #94a3b8; }
-    .clip-del { margin-left: auto; width: 20px; height: 20px; background: #334155; color: #e2e8f0; border: 0; border-radius: 10px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
-    .clip-del:hover { background: #b91c1c; }
-    .clip-title { width: 100%; margin-bottom: 4px; font-size: 12px; padding: 4px 8px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; }
-    .clip-note { width: 100%; font-size: 12px; resize: vertical; min-height: 32px; padding: 4px 8px; background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; font-family: inherit; }
-    .clips-actions { display: flex; gap: 6px; margin-top: 6px; }
-    .clips-export { padding: 4px 10px; background: #334155; color: #e2e8f0; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    .clips-export:hover { background: #475569; }
-    .clip-video { width: 100%; max-height: 280px; background: #000; border-radius: 4px; display: block; margin: 6px 0; }
-    .clip-download {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 20px; height: 20px; border-radius: 10px;
-      background: #334155; color: #e2e8f0; text-decoration: none;
-      font-size: 13px; line-height: 1;
-    }
-    .clip-download:hover { background: #6366f1; }
-    .clip-ytdlp { padding: 2px 8px; background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: ui-monospace, monospace; }
-    .clip-ytdlp:hover { background: #334155; color: #fbbf24; border-color: #fbbf24; }
-    .clip-pending {
-      padding: 12px;
-      margin: 6px 0;
-      background: rgba(99, 102, 241, 0.08);
-      border: 1px dashed #6366f1;
-      border-radius: 4px;
-      color: #cbd5e1;
-      font-size: 12px;
-      text-align: center;
-    }
-    .clip-pending-stage {
-      margin-top: 4px;
-      font-size: 11px;
-      color: #94a3b8;
-      font-family: ui-monospace, monospace;
-    }
-    .clip-error {
-      padding: 10px 12px;
-      margin: 6px 0;
-      background: rgba(220, 38, 38, 0.08);
-      border: 1px solid rgba(220, 38, 38, 0.5);
-      border-radius: 4px;
-      color: #fca5a5;
-    }
-    .clip-error-head { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
-    .clip-error-detail {
-      margin: 0; font-size: 11px; color: #fecaca;
-      font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
-      max-height: 160px; overflow: auto;
-    }
   </style>
 </head>
 <body>

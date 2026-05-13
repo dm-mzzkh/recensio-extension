@@ -16,7 +16,8 @@
       "Bash(git -C /repos/recensio-extension rm web-ext-config.js)",
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(r['full_name'], '|', r.get\\('description',''\\)[:120], '|', r['stargazers_count'], 'stars'\\) for r in data['items']]\")",
       "Bash(python3 -c \"import json,sys,base64; r=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(r['content']\\).decode\\(\\)\\)\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python3 -m py_compile native-host/recensio_ytdl.py)"
     ]
   }
 }

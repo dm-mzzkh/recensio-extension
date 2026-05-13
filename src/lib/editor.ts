@@ -11,6 +11,7 @@ import {
   listClips,
   updateClip,
   deleteClip,
+  listSystemTags,
   type Screenshot,
   type Clip,
   type Video,
@@ -98,6 +99,93 @@ export async function renderEditor(
     sub.appendChild(link);
   }
   wrap.appendChild(sub);
+
+  // System tags (read-only) — pulled from YouTube `.tags[]` or TikTok
+  // hashtags via the native host. Shown before user tags so the source's
+  // own taxonomy is visible at a glance.
+  const sysTagsHead = document.createElement('div');
+  sysTagsHead.className = 'sys-tags-head';
+  const sysTagsLabel = document.createElement('label');
+  sysTagsLabel.textContent = 'System tags';
+  sysTagsHead.appendChild(sysTagsLabel);
+
+  const sysRefreshBtn = document.createElement('button');
+  sysRefreshBtn.type = 'button';
+  sysRefreshBtn.className = 'sys-tags-refresh';
+  sysRefreshBtn.title = 'Перетянуть теги с источника через yt-dlp';
+  sysRefreshBtn.textContent = '↻';
+  sysTagsHead.appendChild(sysRefreshBtn);
+  wrap.appendChild(sysTagsHead);
+
+  const sysTagsBox = document.createElement('div');
+  sysTagsBox.className = 'sys-tags';
+  wrap.appendChild(sysTagsBox);
+
+  const sysTagsStatus = document.createElement('p');
+  sysTagsStatus.className = 'sys-tags-status';
+  wrap.appendChild(sysTagsStatus);
+
+  async function renderSystemTags() {
+    sysTagsBox.innerHTML = '';
+    const items = await listSystemTags(videoId);
+    if (items.length === 0) {
+      const empty = document.createElement('span');
+      empty.className = 'sys-tags-empty';
+      empty.textContent = v!.systemTagsFetchedAt
+        ? 'Источник не вернул тегов.'
+        : 'Ещё не подтянуто.';
+      sysTagsBox.appendChild(empty);
+      return;
+    }
+    for (const t of items) {
+      const chip = document.createElement('span');
+      chip.className = 'sys-chip';
+      chip.textContent = `#${t.name}`;
+      sysTagsBox.appendChild(chip);
+    }
+  }
+
+  async function fetchSystemTags(force: boolean) {
+    if (!v!.url) {
+      sysTagsStatus.textContent = 'Нет URL — не могу запросить теги.';
+      return;
+    }
+    sysRefreshBtn.disabled = true;
+    sysTagsStatus.textContent = force ? 'Тяну теги…' : 'Подтягиваю теги впервые…';
+    try {
+      const resp = (await browser.runtime.sendMessage({
+        type: 'recensio:fetch-source-tags',
+        videoId,
+        url: v!.url,
+        source: v!.source,
+      })) as { ok: boolean; tags?: string[]; error?: string } | undefined;
+      if (resp?.ok) {
+        // Refresh the cached video so `systemTagsFetchedAt` is correct for
+        // subsequent renderSystemTags() empty-state copy.
+        const fresh = await getVideo(videoId);
+        if (fresh) v!.systemTagsFetchedAt = fresh.systemTagsFetchedAt;
+        sysTagsStatus.textContent = '';
+        await renderSystemTags();
+      } else {
+        sysTagsStatus.textContent = `Ошибка: ${resp?.error ?? 'unknown'}`;
+      }
+    } catch (e) {
+      sysTagsStatus.textContent = `Ошибка: ${(e as Error).message}`;
+    } finally {
+      sysRefreshBtn.disabled = false;
+    }
+  }
+
+  sysRefreshBtn.addEventListener('click', () => {
+    void fetchSystemTags(true);
+  });
+
+  await renderSystemTags();
+  if (v.systemTagsFetchedAt == null) {
+    // First-open auto-fetch. Don't await — let the rest of the editor render
+    // immediately and the chips fill in when the host responds.
+    void fetchSystemTags(false);
+  }
 
   // Tags
   const tagsLabel = document.createElement('label');

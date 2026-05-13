@@ -29,12 +29,13 @@ export async function updateReview(
 export async function deleteVideo(videoId: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.videos, db.videoTags, db.screenshots, db.clips],
+    [db.videos, db.videoTags, db.screenshots, db.clips, db.systemTags],
     async () => {
       await db.videos.delete(videoId);
       await db.videoTags.where('videoId').equals(videoId).delete();
       await db.screenshots.where('videoId').equals(videoId).delete();
       await db.clips.where('videoId').equals(videoId).delete();
+      await db.systemTags.where('videoId').equals(videoId).delete();
     },
   );
 }

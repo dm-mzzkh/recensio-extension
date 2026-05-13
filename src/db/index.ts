@@ -4,3 +4,4 @@ export * from './tags';
 export * from './search';
 export * from './screenshots';
 export * from './clips';
+export * from './systemTags';

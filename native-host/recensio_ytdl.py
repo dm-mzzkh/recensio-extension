@@ -11,17 +11,21 @@ limit from host to extension).
 Protocol (request):
   { "cmd": "clip", "clipId": N, "videoId": "ID",
     "startSec": float, "endSec": float }
+  { "cmd": "source-tags", "videoId": "ID", "url": "...", "source": "youtube"|"tiktok" }
 
 Protocol (responses, may be many per request):
   { "cmd": "clip-progress", "clipId": N, "stage": "..." }
   { "cmd": "clip-chunk", "clipId": N, "index": K, "total": T, "b64": "..." }
   { "cmd": "clip-done", "clipId": N, "size": bytes, "mimeType": "video/mp4" }
   { "cmd": "clip-error", "clipId": N, "error": "..." }
+  { "cmd": "source-tags-done", "videoId": "ID", "tags": [...] }
+  { "cmd": "source-tags-error", "videoId": "ID", "error": "..." }
 """
 
 import base64
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -96,6 +100,58 @@ def yt_dlp_url(yt_dlp: str, video_url: str, fmt: str) -> str:
     if not out:
         raise RuntimeError(f"yt-dlp -f {fmt}: empty url")
     return out
+
+
+_HASHTAG_RE = re.compile(r'#([A-Za-z0-9_À-￿]+)')
+
+
+def yt_dlp_json(yt_dlp: str, video_url: str) -> dict:
+    """Run `yt-dlp -J URL` and return parsed metadata JSON.
+
+    `--no-warnings` keeps stderr quiet on normal pulls but we still capture
+    it so a real failure (e.g. private video, geo-block) gets surfaced.
+    """
+    proc = subprocess.run(
+        [yt_dlp, '-J', '--no-warnings', '--skip-download', video_url],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        err = proc.stderr.decode(errors='replace').strip() or 'yt-dlp -J failed'
+        raise RuntimeError(err)
+    raw = proc.stdout.decode(errors='replace').strip()
+    if not raw:
+        raise RuntimeError('yt-dlp -J: empty output')
+    return json.loads(raw)
+
+
+def process_source_tags(msg):
+    video_id = msg['videoId']
+    url = msg['url']
+    source = msg.get('source') or 'youtube'
+
+    yt_dlp = resolve_bin('yt-dlp')
+    data = yt_dlp_json(yt_dlp, url)
+
+    tags: list[str]
+    if source == 'youtube':
+        # YouTube exposes a curated `tags` array. Fall back to hashtags in the
+        # description for videos where the uploader skipped the tags field.
+        raw_tags = data.get('tags') or []
+        tags = [t for t in raw_tags if isinstance(t, str) and t.strip()]
+        if not tags:
+            desc = data.get('description') or ''
+            tags = _HASHTAG_RE.findall(desc)
+    else:
+        # TikTok descriptions are the canonical tag source: `#tag` literals.
+        desc = data.get('description') or ''
+        tags = _HASHTAG_RE.findall(desc)
+
+    send_message({
+        'cmd': 'source-tags-done',
+        'videoId': video_id,
+        'tags': tags,
+    })
 
 
 def process_clip(msg):
@@ -180,6 +236,8 @@ def main():
             cmd = msg.get('cmd')
             if cmd == 'clip':
                 process_clip(msg)
+            elif cmd == 'source-tags':
+                process_source_tags(msg)
             elif cmd == 'ping':
                 send_message({'cmd': 'pong'})
             else:
@@ -189,12 +247,21 @@ def main():
                     'error': f'unknown cmd: {cmd!r}',
                 })
         except Exception as e:
-            send_message({
-                'cmd': 'clip-error',
-                'clipId': msg.get('clipId'),
+            # Route errors to the right channel so the caller sees them under
+            # the response type they expect (otherwise the background side
+            # silently drops the message).
+            cmd = msg.get('cmd') if isinstance(msg, dict) else None
+            err_cmd = 'source-tags-error' if cmd == 'source-tags' else 'clip-error'
+            payload = {
+                'cmd': err_cmd,
                 'error': f'{type(e).__name__}: {e}',
                 'trace': traceback.format_exc(),
-            })
+            }
+            if err_cmd == 'clip-error':
+                payload['clipId'] = msg.get('clipId') if isinstance(msg, dict) else None
+            else:
+                payload['videoId'] = msg.get('videoId') if isinstance(msg, dict) else None
+            send_message(payload)
 
 
 if __name__ == '__main__':

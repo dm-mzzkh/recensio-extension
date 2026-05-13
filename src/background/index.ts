@@ -1,5 +1,13 @@
-import { addClip, addScreenshot, getVideo, saveVideo, updateClip } from '../db';
+import {
+  addClip,
+  addScreenshot,
+  getVideo,
+  saveVideo,
+  setSystemTags,
+  updateClip,
+} from '../db';
 import { fetchVideoMetadata } from '../lib/oembed';
+import type { VideoSource } from '../lib/oembed';
 
 browser.runtime.onInstalled.addListener(() => {
   console.log('Recensio installed');
@@ -362,10 +370,105 @@ async function handleStartRecording(msg: StartRecordingMessage) {
   return result;
 }
 
+interface FetchSourceTagsMessage {
+  type: 'recensio:fetch-source-tags';
+  videoId: string;
+  url: string;
+  source: VideoSource;
+}
+
+function isFetchSourceTagsMessage(m: unknown): m is FetchSourceTagsMessage {
+  return (
+    typeof m === 'object' &&
+    m !== null &&
+    (m as { type?: unknown }).type === 'recensio:fetch-source-tags' &&
+    typeof (m as { videoId?: unknown }).videoId === 'string' &&
+    typeof (m as { url?: unknown }).url === 'string'
+  );
+}
+
+const SOURCE_TAGS_TIMEOUT_MS = 45 * 1000;
+
+async function fetchSourceTagsViaHost(
+  msg: FetchSourceTagsMessage,
+): Promise<{ ok: boolean; tags?: string[]; error?: string }> {
+  let port: browser.runtime.Port;
+  try {
+    port = browser.runtime.connectNative(NATIVE_HOST);
+  } catch (e) {
+    return { ok: false, error: `native host ${NATIVE_HOST} unreachable: ${(e as Error).message}` };
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: { ok: boolean; tags?: string[]; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      try {
+        port.disconnect();
+      } catch {
+        /* ignore */
+      }
+      resolve(result);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      finish({ ok: false, error: `source-tags timeout (${SOURCE_TAGS_TIMEOUT_MS / 1000}s)` });
+    }, SOURCE_TAGS_TIMEOUT_MS);
+
+    port.onMessage.addListener((raw: unknown) => {
+      if (!raw || typeof raw !== 'object') return;
+      const m = raw as { cmd?: string; videoId?: string; tags?: unknown; error?: string };
+      // Cross-check videoId so we don't accept a stray response from another
+      // in-flight request that happened to share this port.
+      if (m.videoId !== msg.videoId) return;
+      if (m.cmd === 'source-tags-done') {
+        const tags = Array.isArray(m.tags)
+          ? m.tags.filter((t): t is string => typeof t === 'string')
+          : [];
+        finish({ ok: true, tags });
+      } else if (m.cmd === 'source-tags-error') {
+        finish({ ok: false, error: m.error || 'unknown error' });
+      }
+    });
+
+    port.onDisconnect.addListener((p) => {
+      const err = (p as browser.runtime.Port & { error?: { message?: string } }).error;
+      finish({ ok: false, error: err?.message ?? 'native host disconnected' });
+    });
+
+    try {
+      port.postMessage({
+        cmd: 'source-tags',
+        videoId: msg.videoId,
+        url: msg.url,
+        source: msg.source,
+      });
+    } catch (e) {
+      finish({ ok: false, error: (e as Error).message });
+    }
+  });
+}
+
+async function handleFetchSourceTags(msg: FetchSourceTagsMessage) {
+  const result = await fetchSourceTagsViaHost(msg);
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+  try {
+    await setSystemTags(msg.videoId, result.tags ?? []);
+  } catch (e) {
+    return { ok: false, error: `db: ${(e as Error).message}` };
+  }
+  return { ok: true, tags: result.tags ?? [] };
+}
+
 browser.runtime.onMessage.addListener((msg) => {
   if (isSaveMessage(msg)) return handleSave(msg);
   if (isSaveClipMessage(msg)) return handleSaveClip(msg);
   if (isStartRecordingMessage(msg)) return handleStartRecording(msg);
   if (isOpenEditorTabMessage(msg)) return handleOpenEditorTab(msg);
+  if (isFetchSourceTagsMessage(msg)) return handleFetchSourceTags(msg);
   return undefined;
 });
