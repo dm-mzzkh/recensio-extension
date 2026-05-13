@@ -68,6 +68,61 @@
       cursor: zoom-out;
     }
     .shot-lightbox img { max-width: 96vw; max-height: 96vh; border-radius: 6px; }
+
+    .clips { display: flex; flex-direction: column; gap: 8px; }
+    .clips-empty { font-size: 12px; color: #64748b; margin: 0; padding: 8px 0; }
+    .clip { background: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 8px; }
+    .clip-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .clip-range { font-weight: 700; color: #fbbf24; text-decoration: none; font-variant-numeric: tabular-nums; }
+    .clip-range:hover { text-decoration: underline; }
+    .clip-dur { font-size: 11px; color: #94a3b8; }
+    .clip-del { margin-left: auto; width: 20px; height: 20px; background: #334155; color: #e2e8f0; border: 0; border-radius: 10px; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+    .clip-del:hover { background: #b91c1c; }
+    .clip-title { width: 100%; margin-bottom: 4px; font-size: 12px; padding: 4px 8px; }
+    .clip-note { width: 100%; font-size: 12px; resize: vertical; min-height: 32px; padding: 4px 8px; }
+    .clips-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .clips-export { padding: 4px 10px; background: #334155; color: #e2e8f0; border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .clips-export:hover { background: #475569; }
+    .clip-video { width: 100%; max-height: 280px; background: #000; border-radius: 4px; display: block; margin: 6px 0; }
+    .clip-download {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 20px; height: 20px; border-radius: 10px;
+      background: #334155; color: #e2e8f0; text-decoration: none;
+      font-size: 13px; line-height: 1;
+    }
+    .clip-download:hover { background: #6366f1; }
+    .clip-ytdlp { padding: 2px 8px; background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: ui-monospace, monospace; }
+    .clip-ytdlp:hover { background: #334155; color: #fbbf24; border-color: #fbbf24; }
+    .clip-pending {
+      padding: 12px;
+      margin: 6px 0;
+      background: rgba(99, 102, 241, 0.08);
+      border: 1px dashed #6366f1;
+      border-radius: 4px;
+      color: #cbd5e1;
+      font-size: 12px;
+      text-align: center;
+    }
+    .clip-pending-stage {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #94a3b8;
+      font-family: ui-monospace, monospace;
+    }
+    .clip-error {
+      padding: 10px 12px;
+      margin: 6px 0;
+      background: rgba(220, 38, 38, 0.08);
+      border: 1px solid rgba(220, 38, 38, 0.5);
+      border-radius: 4px;
+      color: #fca5a5;
+    }
+    .clip-error-head { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+    .clip-error-detail {
+      margin: 0; font-size: 11px; color: #fecaca;
+      font-family: ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
+      max-height: 160px; overflow: auto;
+    }
   </style>
 </head>
 <body>

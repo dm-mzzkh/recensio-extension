@@ -13,7 +13,9 @@
       "Bash(curl *)",
       "Bash(git -C /repos/recensio-extension status --short web-ext-config.js web-ext-config.mjs)",
       "Bash(git -C /repos/recensio-extension ls-files web-ext-config.js)",
-      "Bash(git -C /repos/recensio-extension rm web-ext-config.js)"
+      "Bash(git -C /repos/recensio-extension rm web-ext-config.js)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(r['full_name'], '|', r.get\\('description',''\\)[:120], '|', r['stargazers_count'], 'stars'\\) for r in data['items']]\")",
+      "Bash(python3 -c \"import json,sys,base64; r=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(r['content']\\).decode\\(\\)\\)\")"
     ]
   }
 }

@@ -49,6 +49,26 @@ export interface Screenshot {
   createdAt: number;
 }
 
+export type ClipStatus = 'pending' | 'ready' | 'error';
+
+export interface Clip {
+  id?: number;
+  videoId: string;
+  startSec: number;
+  endSec: number;
+  title?: string;
+  note?: string;
+  blob?: Blob;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  status?: ClipStatus;
+  errorMsg?: string;
+  stage?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export class RecensioDB extends Dexie {
   videos!: Table<Video, string>;
   tags!: Table<Tag, number>;
@@ -56,6 +76,7 @@ export class RecensioDB extends Dexie {
   collections!: Table<Collection, number>;
   collectionItems!: Table<CollectionItem, number>;
   screenshots!: Table<Screenshot, number>;
+  clips!: Table<Clip, number>;
 
   constructor() {
     super('recensio');
@@ -68,6 +89,19 @@ export class RecensioDB extends Dexie {
     });
     this.version(2).stores({
       screenshots: '++id, videoId, createdAt, [videoId+createdAt]',
+    });
+    this.version(3).stores({
+      clips: '++id, videoId, startSec, createdAt, [videoId+startSec]',
+    });
+    // v4 adds blob/mimeType/width/height fields. Indices unchanged.
+    this.version(4).stores({
+      clips: '++id, videoId, startSec, createdAt, [videoId+startSec]',
+    });
+    // v5 adds status/errorMsg/stage fields and indexes status. Existing
+    // rows will have status===undefined; editor treats absence as "ready
+    // if blob, otherwise pending".
+    this.version(5).stores({
+      clips: '++id, videoId, startSec, createdAt, status, [videoId+startSec]',
     });
   }
 }

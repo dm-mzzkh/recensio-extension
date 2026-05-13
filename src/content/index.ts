@@ -2,6 +2,8 @@ import { extractVideoId } from '../lib/oembed';
 
 const BTN_ID = 'recensio-title-btn';
 const SHOT_BTN_ID = 'recensio-shot-btn';
+const CLIP_BTN_ID = 'recensio-clip-btn';
+const CLIP_PANEL_ID = 'recensio-clip-panel';
 const OVERLAY_ID = 'recensio-overlay';
 const TOAST_ID = 'recensio-toast';
 
@@ -29,6 +31,61 @@ function injectStyles() {
     }
     .recensio-action:hover { background: rgba(99, 102, 241, 0.95); color: #fff; }
     .recensio-action:disabled { opacity: 0.5; cursor: not-allowed; }
+    .recensio-action.recensio-action--pending {
+      background: rgba(251, 191, 36, 0.25);
+      border-color: #f59e0b;
+      color: #fbbf24;
+    }
+    .recensio-action.recensio-action--pending:hover {
+      background: rgba(251, 191, 36, 0.85);
+      color: #1f2937;
+    }
+    .recensio-action.recensio-action--ready {
+      background: rgba(16, 185, 129, 0.25);
+      border-color: #10b981;
+      color: #6ee7b7;
+    }
+    #recensio-clip-panel {
+      display: none;
+      margin-top: 8px;
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.96);
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #f8fafc;
+      font: 500 13px system-ui, sans-serif;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #recensio-clip-panel.recensio-clip-panel--visible { display: flex; }
+    #recensio-clip-panel .recensio-clip-panel__range {
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #fbbf24;
+    }
+    #recensio-clip-panel .recensio-clip-panel__hint {
+      color: #94a3b8;
+      font-weight: 400;
+    }
+    #recensio-clip-panel button {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      font: 600 12px system-ui, sans-serif;
+    }
+    #recensio-clip-panel .recensio-clip-panel__save {
+      background: #10b981; color: #052e1c; border-color: #059669;
+    }
+    #recensio-clip-panel .recensio-clip-panel__save:hover { background: #34d399; }
+    #recensio-clip-panel .recensio-clip-panel__save:disabled { opacity: 0.5; cursor: not-allowed; }
+    #recensio-clip-panel .recensio-clip-panel__cancel {
+      background: transparent; color: #cbd5e1; border-color: #475569;
+    }
+    #recensio-clip-panel .recensio-clip-panel__cancel:hover {
+      background: #b91c1c; color: #fff; border-color: #b91c1c;
+    }
     #${BTN_ID} { margin-left: 12px; }
     #${OVERLAY_ID} {
       position: fixed;
@@ -156,6 +213,199 @@ function waitNextVideoFrame(video: HTMLVideoElement): Promise<void> {
   });
 }
 
+interface PendingClip {
+  videoId: string;
+  startSec: number;
+  endSec?: number;
+}
+let pendingClip: PendingClip | null = null;
+
+function fmtYtDlpTime(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec - h * 3600 - m * 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${s.toFixed(2).padStart(5, '0')}`;
+}
+
+function ytDlpCommand(videoId: string, startSec: number, endSec: number): string {
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  const range = `*${fmtYtDlpTime(startSec)}-${fmtYtDlpTime(endSec)}`;
+  return `yt-dlp -f "bv*+ba/b" --download-sections "${range}" "${url}"`;
+}
+
+function updateClipButton() {
+  const btn = document.getElementById(CLIP_BTN_ID);
+  if (!btn) return;
+  btn.classList.remove('recensio-action--pending', 'recensio-action--ready');
+  if (!pendingClip) {
+    btn.textContent = '✂';
+    btn.title = 'Поставить метку клипа (Alt+Shift+C). Первый клик — начало, второй — конец.';
+    return;
+  }
+  if (pendingClip.endSec == null) {
+    btn.classList.add('recensio-action--pending');
+    btn.textContent = `✂ ${fmtTime(pendingClip.startSec)} → …`;
+    btn.title = 'Нажмите ещё раз, чтобы поставить метку конца клипа';
+  } else {
+    btn.classList.add('recensio-action--ready');
+    btn.textContent = `✂ ${fmtTime(pendingClip.startSec)} – ${fmtTime(pendingClip.endSec)}`;
+    btn.title = 'Метки готовы — выберите «Сохранить» или «Отменить»';
+  }
+}
+
+function renderPanel() {
+  const panel = document.getElementById(CLIP_PANEL_ID);
+  if (!panel) return;
+  panel.classList.toggle('recensio-clip-panel--visible', pendingClip != null);
+  panel.innerHTML = '';
+  if (!pendingClip) return;
+
+  const range = document.createElement('span');
+  range.className = 'recensio-clip-panel__range';
+  if (pendingClip.endSec == null) {
+    range.textContent = `▶ ${fmtTime(pendingClip.startSec)} → …`;
+  } else {
+    const dur = pendingClip.endSec - pendingClip.startSec;
+    range.textContent = `▶ ${fmtTime(pendingClip.startSec)} – ${fmtTime(
+      pendingClip.endSec,
+    )} (${dur.toFixed(1)} c)`;
+  }
+  panel.appendChild(range);
+
+  if (pendingClip.endSec != null) {
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'recensio-clip-panel__save';
+    save.textContent = '↓ Сохранить';
+    save.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      void savePendingClip();
+    });
+    panel.appendChild(save);
+  }
+
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'recensio-clip-panel__cancel';
+  cancel.textContent = '✕ Отменить';
+  cancel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    cancelPendingClip();
+  });
+  panel.appendChild(cancel);
+}
+
+function resetClip() {
+  pendingClip = null;
+  updateClipButton();
+  renderPanel();
+}
+
+function cancelPendingClip() {
+  if (!pendingClip) return;
+  resetClip();
+  showToast('Клип отменён');
+}
+
+async function savePendingClip() {
+  if (!pendingClip || pendingClip.endSec == null) return;
+  const { videoId, startSec, endSec } = pendingClip as Required<PendingClip>;
+  try {
+    const resp = (await browser.runtime.sendMessage({
+      type: 'recensio:save-clip',
+      videoId,
+      url: location.href,
+      startSec,
+      endSec,
+    })) as { ok: boolean; id?: number; error?: string } | undefined;
+    if (!resp?.ok || resp.id == null) {
+      showToast(`Ошибка: ${resp?.error ?? 'unknown'}`, true);
+      return;
+    }
+    const clipId = resp.id;
+    const cmd = ytDlpCommand(videoId, startSec, endSec);
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      copied = true;
+    } catch {
+      copied = false;
+    }
+    const dur = endSec - startSec;
+    showToast(
+      `✂ ${fmtTime(startSec)}–${fmtTime(endSec)} (${dur.toFixed(1)} c)${
+        copied ? ' · yt-dlp скопирован' : ''
+      } · идёт фоновая запись…`,
+      false,
+    );
+    resetClip();
+    // Kick off background recording. Don't await — user shouldn't block.
+    void browser.runtime.sendMessage({
+      type: 'recensio:start-recording',
+      clipId,
+      videoId,
+      startSec,
+      endSec,
+    });
+  } catch (e) {
+    showToast(`Ошибка: ${(e as Error).message}`, true);
+  }
+}
+
+async function toggleClipMark() {
+  const video = findVideoEl();
+  if (!video) {
+    showToast('Видео не найдено', true);
+    return;
+  }
+  const videoId = extractVideoId(location.href);
+  if (!videoId) {
+    showToast('Не страница видео', true);
+    return;
+  }
+  const t = video.currentTime;
+  if (!Number.isFinite(t)) {
+    showToast('Время видео недоступно', true);
+    return;
+  }
+
+  // No pending (or different video) → set first marker
+  if (!pendingClip || pendingClip.videoId !== videoId) {
+    pendingClip = { videoId, startSec: t };
+    updateClipButton();
+    renderPanel();
+    showToast(`✂ Метка начала: ${fmtTime(t)}`);
+    return;
+  }
+
+  // First marker present, no end → set second marker
+  if (pendingClip.endSec == null) {
+    if (t <= pendingClip.startSec) {
+      showToast(`Конец должен быть позже ${fmtTime(pendingClip.startSec)}`, true);
+      return;
+    }
+    pendingClip = { ...pendingClip, endSec: t };
+    updateClipButton();
+    renderPanel();
+    showToast(
+      `✂ Метка конца: ${fmtTime(t)} · нажмите «Сохранить» в панели ниже`,
+    );
+    return;
+  }
+
+  // Both markers already set → re-position end marker (lets user retake without cancelling)
+  if (t > pendingClip.startSec) {
+    pendingClip = { ...pendingClip, endSec: t };
+    updateClipButton();
+    renderPanel();
+    showToast(`Метка конца обновлена: ${fmtTime(t)}`);
+  }
+}
+
 async function takeScreenshot() {
   const video = findVideoEl();
   if (!video) {
@@ -206,8 +456,15 @@ async function takeScreenshot() {
 }
 
 function ensureButton() {
-  if (document.getElementById(BTN_ID) && document.getElementById(SHOT_BTN_ID)) return;
-  const title = document.querySelector('h1.ytd-watch-metadata');
+  if (
+    document.getElementById(BTN_ID) &&
+    document.getElementById(SHOT_BTN_ID) &&
+    document.getElementById(CLIP_BTN_ID) &&
+    document.getElementById(CLIP_PANEL_ID)
+  ) {
+    return;
+  }
+  const title = document.querySelector<HTMLElement>('h1.ytd-watch-metadata');
   if (!title) return;
 
   if (!document.getElementById(BTN_ID)) {
@@ -239,6 +496,34 @@ function ensureButton() {
     });
     title.appendChild(shot);
   }
+
+  if (!document.getElementById(CLIP_BTN_ID)) {
+    const clip = document.createElement('button');
+    clip.id = CLIP_BTN_ID;
+    clip.className = 'recensio-action';
+    clip.type = 'button';
+    clip.textContent = '✂';
+    clip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      void toggleClipMark();
+    });
+    title.appendChild(clip);
+  }
+
+  if (!document.getElementById(CLIP_PANEL_ID)) {
+    const panel = document.createElement('div');
+    panel.id = CLIP_PANEL_ID;
+    // Place panel right after the title so it sits under the action buttons.
+    if (title.parentElement) {
+      title.parentElement.insertBefore(panel, title.nextSibling);
+    } else {
+      title.appendChild(panel);
+    }
+  }
+
+  updateClipButton();
+  renderPanel();
 }
 
 function closeOverlay() {
@@ -277,19 +562,19 @@ function openOverlay() {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && document.getElementById(OVERLAY_ID)) {
-    closeOverlay();
+  if (e.key === 'Escape') {
+    if (document.getElementById(OVERLAY_ID)) {
+      closeOverlay();
+    } else if (pendingClip) {
+      cancelPendingClip();
+    }
   }
 });
 
 browser.runtime.onMessage.addListener((msg) => {
-  if (
-    msg &&
-    typeof msg === 'object' &&
-    (msg as { type?: string }).type === 'recensio:trigger-capture'
-  ) {
-    void takeScreenshot();
-  }
+  const type = msg && typeof msg === 'object' ? (msg as { type?: string }).type : undefined;
+  if (type === 'recensio:trigger-capture') void takeScreenshot();
+  else if (type === 'recensio:trigger-clip-mark') void toggleClipMark();
   return undefined;
 });
 
@@ -319,5 +604,6 @@ observer.observe(document.body, { childList: true, subtree: true });
 
 document.addEventListener('yt-navigate-finish', () => {
   closeOverlay();
+  pendingClip = null;
   ensureButton();
 });

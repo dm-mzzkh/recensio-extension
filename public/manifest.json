@@ -12,7 +12,7 @@
       }
     }
   },
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "nativeMessaging"],
   "host_permissions": ["https://www.youtube.com/*"],
   "action": {
     "default_popup": "popup/index.html",
@@ -22,6 +22,10 @@
     "take-screenshot": {
       "suggested_key": { "default": "Alt+Shift+S" },
       "description": "Сохранить скриншот текущего кадра видео YouTube"
+    },
+    "take-clip-mark": {
+      "suggested_key": { "default": "Alt+Shift+C" },
+      "description": "Поставить маркер клипа (начало/конец)"
     }
   },
   "background": {
