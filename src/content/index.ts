@@ -599,11 +599,23 @@ function scheduleEnsureButton() {
   }, 150);
 }
 
+// Narrow scope: observe the page-level container with childList only.
+// document.body + subtree fires on every comment/recommendation update,
+// which is hundreds of useless callbacks per minute. The page-manager
+// swap on SPA navigation is the only mutation we actually care about.
 const observer = new MutationObserver(() => scheduleEnsureButton());
-observer.observe(document.body, { childList: true, subtree: true });
+const observerTarget =
+  document.querySelector('ytd-page-manager') ?? document.body;
+observer.observe(observerTarget, { childList: true });
 
 document.addEventListener('yt-navigate-finish', () => {
   closeOverlay();
   pendingClip = null;
+  window.clearTimeout(toastTimer);
   ensureButton();
+});
+
+window.addEventListener('pagehide', () => {
+  observer.disconnect();
+  window.clearTimeout(toastTimer);
 });

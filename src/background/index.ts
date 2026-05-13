@@ -163,6 +163,31 @@ interface HostProgressMsg {
 }
 type HostMsg = HostChunkMsg | HostDoneMsg | HostErrorMsg | HostProgressMsg;
 
+function parseHostMsg(raw: unknown, expectedClipId: number): HostMsg | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw as Partial<HostMsg> & { cmd?: unknown; clipId?: unknown };
+  if (typeof m.cmd !== 'string') return null;
+  // clip-progress/chunk/done must reference the clip we requested. Ignore
+  // strays (e.g. a host that confused state between requests).
+  if (m.cmd === 'clip-progress' || m.cmd === 'clip-chunk' || m.cmd === 'clip-done') {
+    if (m.clipId !== expectedClipId) return null;
+  }
+  // clip-error may carry clipId === null when the host failed before
+  // parsing the request — still surface it to the caller.
+  if (m.cmd === 'clip-progress') return m as HostProgressMsg;
+  if (m.cmd === 'clip-chunk') {
+    if (typeof (m as HostChunkMsg).index !== 'number') return null;
+    if (typeof (m as HostChunkMsg).total !== 'number') return null;
+    if (typeof (m as HostChunkMsg).b64 !== 'string') return null;
+    return m as HostChunkMsg;
+  }
+  if (m.cmd === 'clip-done') return m as HostDoneMsg;
+  if (m.cmd === 'clip-error') return m as HostErrorMsg;
+  return null;
+}
+
+const HOST_TIMEOUT_MS = 5 * 60 * 1000;
+
 async function downloadClipViaHost(
   msg: StartRecordingMessage,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -183,13 +208,14 @@ async function downloadClipViaHost(
 
   return new Promise((resolve) => {
     const chunks: Uint8Array[] = [];
+    const seenChunks = new Set<number>();
     let expectedTotal = -1;
-    let received = 0;
     let settled = false;
 
     const finish = (result: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeoutId);
       try {
         port.disconnect();
       } catch {
@@ -198,25 +224,44 @@ async function downloadClipViaHost(
       resolve(result);
     };
 
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      const error = `native host timeout (${HOST_TIMEOUT_MS / 60000}min)`;
+      updateClip(msg.clipId, {
+        status: 'error',
+        errorMsg: error,
+        stage: undefined,
+      }).catch(() => undefined);
+      finish({ ok: false, error });
+    }, HOST_TIMEOUT_MS);
+
     port.onMessage.addListener(async (raw: unknown) => {
-      const m = raw as HostMsg;
-      if (!m || typeof m !== 'object') return;
+      const m = parseHostMsg(raw, msg.clipId);
+      if (!m) return;
       try {
         if (m.cmd === 'clip-progress') {
           console.log('[Recensio host]', m.clipId, m.stage);
           await updateClip(msg.clipId, { stage: m.stage }).catch(() => undefined);
         } else if (m.cmd === 'clip-chunk') {
           chunks[m.index] = base64ToBytes(m.b64);
-          received++;
+          seenChunks.add(m.index);
           expectedTotal = m.total;
+          const received = seenChunks.size;
           if (received === 1 || received % 5 === 0 || received === m.total) {
             await updateClip(msg.clipId, {
               stage: `chunks ${received}/${m.total}`,
             }).catch(() => undefined);
           }
         } else if (m.cmd === 'clip-done') {
-          if (expectedTotal !== -1 && received !== expectedTotal) {
-            const error = `chunk mismatch: received ${received} of ${expectedTotal}`;
+          if (expectedTotal === -1) expectedTotal = 0;
+          const missing: number[] = [];
+          for (let i = 0; i < expectedTotal; i++) {
+            if (!seenChunks.has(i)) missing.push(i);
+          }
+          if (missing.length > 0) {
+            const preview = missing.slice(0, 10).join(', ');
+            const more = missing.length > 10 ? `, …(+${missing.length - 10})` : '';
+            const error = `missing chunks: ${preview}${more} (got ${seenChunks.size} of ${expectedTotal})`;
             await updateClip(msg.clipId, { status: 'error', errorMsg: error, stage: undefined });
             finish({ ok: false, error });
             return;
@@ -224,8 +269,8 @@ async function downloadClipViaHost(
           const totalSize = chunks.reduce((s, c) => s + (c?.length ?? 0), 0);
           const merged = new Uint8Array(totalSize);
           let off = 0;
-          for (const c of chunks) {
-            if (!c) continue;
+          for (let i = 0; i < expectedTotal; i++) {
+            const c = chunks[i];
             merged.set(c, off);
             off += c.length;
           }
@@ -240,9 +285,10 @@ async function downloadClipViaHost(
           finish({ ok: true });
         } else if (m.cmd === 'clip-error') {
           console.warn('[Recensio host] error', m.clipId, m.error, m.trace);
+          const errorMsg = m.trace ? `${m.error}\n\n${m.trace}` : m.error;
           await updateClip(msg.clipId, {
             status: 'error',
-            errorMsg: m.error,
+            errorMsg,
             stage: undefined,
           }).catch(() => undefined);
           finish({ ok: false, error: m.error });
