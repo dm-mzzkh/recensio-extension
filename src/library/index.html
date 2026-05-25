@@ -15,13 +15,17 @@
     h1 { font-size: 20px; margin: 0; }
     .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
     .page-head h1 { flex: 1; }
-    .page-head a.page-btn {
+    .page-head a.page-btn,
+    .page-head button.page-btn {
       background: #1e293b; color: #e2e8f0;
       border: 1px solid #334155; border-radius: 4px;
       padding: 6px 12px; font-size: 13px;
-      text-decoration: none;
+      text-decoration: none; cursor: pointer; font-family: inherit;
     }
-    .page-head a.page-btn:hover { background: #334155; border-color: #475569; }
+    .page-head a.page-btn:hover,
+    .page-head button.page-btn:hover:not(:disabled) { background: #334155; border-color: #475569; }
+    .page-head button.page-btn:disabled { opacity: 0.6; cursor: wait; }
+    .backup-status { font-size: 12px; color: #94a3b8; margin: -8px 0 12px; min-height: 14px; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .toolbar { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .toolbar input[type="text"], .toolbar input[type="number"] {
       background: #1e293b; color: #f8fafc; border: 1px solid #334155;
@@ -57,8 +61,15 @@
 <body>
   <div class="page-head">
     <h1>Recensio Library</h1>
+    <button id="backup-btn" type="button" class="page-btn" title="Сохранить манифест + новые блобы в ~/Downloads/recensio-backup/">↓ Бэкап</button>
+    <button id="import-btn" type="button" class="page-btn" title="Импорт из папки recensio-backup. ВНИМАНИЕ: затирает текущую базу.">↑ Импорт</button>
     <a class="page-btn" href="../graph/index.html">📊 Граф</a>
   </div>
+  <p id="backup-status" class="backup-status"></p>
+  <!-- webkitdirectory makes the picker accept a whole folder so the user
+       picks ~/Downloads/recensio-backup/ once instead of selecting manifest
+       + every blob by hand. -->
+  <input id="import-input" type="file" webkitdirectory multiple style="display:none" />
   <div class="toolbar">
     <input id="query" type="text" placeholder="Search title or channel…" />
     <input id="tag-filter-input" type="text" list="all-tags-list" placeholder="Filter by tag (Enter)" autocomplete="off" />

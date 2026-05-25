@@ -51,6 +51,17 @@ export interface SystemTag {
   createdAt: number;
 }
 
+// Records which blob files have already been written to the user's Downloads
+// folder by exportBackup(). On re-run we only ship blobs that aren't here yet,
+// turning the otherwise O(total) export into O(new). Wiping the FF profile
+// nukes this ledger and the next backup will re-ship everything — acceptable
+// fallback because the source data hasn't been lost.
+export interface BackupLedger {
+  id?: number;
+  blobKey: string;
+  exportedAt: number;
+}
+
 export type ClipStatus = 'pending' | 'ready' | 'error';
 
 export interface Clip {
@@ -78,6 +89,7 @@ export class RecensioDB extends Dexie {
   screenshots!: Table<Screenshot, number>;
   clips!: Table<Clip, number>;
   systemTags!: Table<SystemTag, number>;
+  backupLedger!: Table<BackupLedger, number>;
 
   constructor() {
     super('recensio');
@@ -127,6 +139,11 @@ export class RecensioDB extends Dexie {
     // editor will pull them on next open.
     this.version(8).stores({
       systemTags: '++id, videoId, [videoId+name]',
+    });
+    // v9 adds backupLedger: tracks which blob files have been shipped to
+    // the user's Downloads folder so subsequent exports stay incremental.
+    this.version(9).stores({
+      backupLedger: '++id, &blobKey',
     });
   }
 }

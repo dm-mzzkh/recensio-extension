@@ -3,3 +3,5 @@ dist/
 web-ext-artifacts/
 *.log
 .DS_Store
+__pycache__/
+*.pyc

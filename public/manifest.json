@@ -12,7 +12,7 @@
       }
     }
   },
-  "permissions": ["storage", "tabs", "nativeMessaging"],
+  "permissions": ["storage", "tabs", "nativeMessaging", "downloads"],
   "host_permissions": ["https://www.youtube.com/*", "https://www.tiktok.com/*"],
   "action": {
     "default_popup": "popup/index.html",

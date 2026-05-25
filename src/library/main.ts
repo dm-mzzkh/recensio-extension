@@ -7,6 +7,7 @@ import {
   type Tag,
 } from '../db';
 import { renderEditor } from '../lib/editor';
+import { exportBackup, importBackup } from '../lib/backup';
 
 const listEl = document.getElementById('list')!;
 const detailEl = document.getElementById('detail')!;
@@ -195,6 +196,78 @@ function applyHash() {
 }
 
 applyHash();
+
+const backupBtn = document.getElementById('backup-btn') as HTMLButtonElement;
+const backupStatusEl = document.getElementById('backup-status') as HTMLParagraphElement;
+
+backupBtn.addEventListener('click', async () => {
+  backupBtn.disabled = true;
+  backupStatusEl.textContent = 'Готовлю бэкап…';
+  try {
+    const result = await exportBackup((p) => {
+      if (p.stage === 'manifest') {
+        backupStatusEl.textContent = p.message ?? 'Манифест…';
+      } else if (p.stage === 'blobs') {
+        const ratio = p.total ? `${p.current + 1}/${p.total}` : '';
+        backupStatusEl.textContent = `Файлы ${ratio}${p.message ? ` · ${p.message}` : ''}`;
+      }
+    });
+    const mfKb = (result.manifestBytes / 1024).toFixed(1);
+    backupStatusEl.textContent =
+      `↓ ~/Downloads/recensio-backup/ · новых ${result.newBlobs}, ` +
+      `пропущено ${result.skippedBlobs} из ${result.totalBlobs}, manifest ${mfKb} KB.`;
+  } catch (e) {
+    backupStatusEl.textContent = `Ошибка: ${(e as Error).message}`;
+  } finally {
+    backupBtn.disabled = false;
+  }
+});
+
+const importBtn = document.getElementById('import-btn') as HTMLButtonElement;
+const importInput = document.getElementById('import-input') as HTMLInputElement;
+
+importBtn.addEventListener('click', () => {
+  // Reset value so picking the same folder twice still fires `change`.
+  importInput.value = '';
+  importInput.click();
+});
+
+importInput.addEventListener('change', async () => {
+  const files = importInput.files ? Array.from(importInput.files) : [];
+  if (!files.length) return;
+  if (!confirm(
+    `Импорт затрёт текущую базу и заменит её содержимым выбранной папки (${files.length} файлов). ` +
+    `Сначала сделай бэкап текущего состояния, если оно тебе нужно. Продолжить?`,
+  )) {
+    return;
+  }
+  importBtn.disabled = true;
+  backupBtn.disabled = true;
+  backupStatusEl.textContent = 'Импорт…';
+  try {
+    const result = await importBackup(files, (p) => {
+      const ratio = p.total ? `${p.current}/${p.total}` : '';
+      backupStatusEl.textContent =
+        `Импорт · ${p.stage} ${ratio}${p.message ? ` · ${p.message}` : ''}`;
+    });
+    backupStatusEl.textContent =
+      `↑ Импорт готов: videos ${result.videos}, screenshots ${result.screenshots}, ` +
+      `clips ${result.clips}` +
+      (result.missingBlobs ? ` · отсутствует ${result.missingBlobs} файлов` : '') +
+      '.';
+    // Reload tag suggestions + list/detail from the freshly written DB.
+    allTags = await listTags();
+    renderTagSuggestions();
+    selectedId = null;
+    detailEl.innerHTML = '<p class="empty">Select a video to edit</p>';
+    await refresh();
+  } catch (e) {
+    backupStatusEl.textContent = `Ошибка импорта: ${(e as Error).message}`;
+  } finally {
+    importBtn.disabled = false;
+    backupBtn.disabled = false;
+  }
+});
 
 void refresh().then(() => {
   if (selectedId) void renderDetail();
