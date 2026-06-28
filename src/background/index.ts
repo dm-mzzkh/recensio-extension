@@ -1,6 +1,7 @@
 import {
   addClip,
   addScreenshot,
+  db,
   getVideo,
   saveVideo,
   setSystemTags,
@@ -8,9 +9,61 @@ import {
 } from '../db';
 import { fetchVideoMetadata } from '../lib/oembed';
 import type { VideoSource } from '../lib/oembed';
+import { computeDataSignature, exportBackup } from '../lib/backup';
+import { getBackupSettings } from '../lib/settings';
+
+// ─── Auto-backup ─────────────────────────────────────────────────────────
+// A periodic alarm re-exports the whole DB to ~/Downloads/recensio-backup/.
+// The export itself is incremental (only new blobs ship), and we additionally
+// skip the run entirely when the data fingerprint is unchanged, so the alarm
+// doesn't spam the download history with identical manifests.
+
+const AUTO_BACKUP_ALARM = 'recensio:auto-backup';
+const AUTO_BACKUP_PERIOD_MIN = 5;
+const SIG_KEY = 'backupLastSignature';
+const LAST_RUN_KEY = 'backupLastRun';
+
+async function ensureBackupAlarm() {
+  if (!(await browser.alarms.get(AUTO_BACKUP_ALARM))) {
+    browser.alarms.create(AUTO_BACKUP_ALARM, { periodInMinutes: AUTO_BACKUP_PERIOD_MIN });
+  }
+}
+
+async function runAutoBackup() {
+  try {
+    const { autoBackup } = await getBackupSettings();
+    if (!autoBackup) return;
+    // Never export an empty DB: a fresh profile (e.g. right after a wipe,
+    // before the user restores) would otherwise overwrite manifest.json.gz in
+    // an existing backup folder with empty data and destroy the restore source.
+    if ((await db.videos.count()) === 0) return;
+
+    const sig = await computeDataSignature();
+    const stored = (await browser.storage.local.get(SIG_KEY))[SIG_KEY];
+    if (stored === sig) return; // nothing changed since last successful export
+
+    const result = await exportBackup();
+    await browser.storage.local.set({ [SIG_KEY]: sig, [LAST_RUN_KEY]: Date.now() });
+    console.log('[Recensio] auto-backup done', result);
+  } catch (e) {
+    // Leave the stored signature as-is so the next tick retries.
+    console.error('[Recensio] auto-backup failed', e);
+  }
+}
+
+browser.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === AUTO_BACKUP_ALARM) void runAutoBackup();
+});
+
+browser.runtime.onStartup.addListener(() => {
+  void ensureBackupAlarm();
+  void runAutoBackup();
+});
 
 browser.runtime.onInstalled.addListener(() => {
   console.log('Recensio installed');
+  void ensureBackupAlarm();
+  void runAutoBackup();
 });
 
 const COMMAND_TO_MSG: Record<string, string> = {

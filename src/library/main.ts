@@ -3,11 +3,13 @@ import {
   getVideoTags,
   listTags,
   normalizeTag,
+  db,
   type Video,
   type Tag,
 } from '../db';
 import { renderEditor } from '../lib/editor';
-import { exportBackup, importBackup } from '../lib/backup';
+import { exportBackup, importBackup, type ImportMode } from '../lib/backup';
+import { getBackupSettings, setBackupSettings } from '../lib/settings';
 
 const listEl = document.getElementById('list')!;
 const detailEl = document.getElementById('detail')!;
@@ -199,7 +201,99 @@ applyHash();
 
 const backupBtn = document.getElementById('backup-btn') as HTMLButtonElement;
 const backupStatusEl = document.getElementById('backup-status') as HTMLParagraphElement;
+const importBtn = document.getElementById('import-btn') as HTMLButtonElement;
+const importInput = document.getElementById('import-input') as HTMLInputElement;
 
+// Which import semantics the next folder pick should use. Set synchronously by
+// whichever control opened the picker (replace / merge / restore-banner).
+let pendingImportMode: ImportMode = 'replace';
+
+// ── Injected controls ──────────────────────────────────────────────────────
+// The library's index.html is intentionally hand-maintained, so the new
+// toggles / merge button / restore banner are created here in JS rather than
+// in markup.
+
+// Merge button sits next to the existing replace-import button.
+const mergeBtn = document.createElement('button');
+mergeBtn.type = 'button';
+mergeBtn.className = 'page-btn';
+mergeBtn.textContent = '⤵ Merge';
+mergeBtn.title =
+  'Объединить бэкап с текущей базой: ничего не удаляется, при совпадении ' +
+  'видео берётся более свежая версия (по дате изменения).';
+importBtn.insertAdjacentElement('afterend', mergeBtn);
+
+// Auto-backup / auto-restore toggles, persisted in storage.local (default on).
+const settingsBar = document.createElement('div');
+settingsBar.style.cssText =
+  'display:flex; gap:18px; align-items:center; font-size:12px; color:#94a3b8; ' +
+  'margin:-4px 0 12px; flex-wrap:wrap;';
+
+function makeToggle(text: string, title: string): { wrap: HTMLLabelElement; cb: HTMLInputElement } {
+  const wrap = document.createElement('label');
+  wrap.style.cssText = 'display:inline-flex; gap:6px; align-items:center; cursor:pointer;';
+  wrap.title = title;
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.style.cursor = 'pointer';
+  wrap.appendChild(cb);
+  wrap.appendChild(document.createTextNode(text));
+  settingsBar.appendChild(wrap);
+  return { wrap, cb };
+}
+
+const autoBackupToggle = makeToggle(
+  'Авто-бэкап каждые 5 мин',
+  'Фоновый экспорт в ~/Downloads/recensio-backup/ раз в 5 минут (только при изменениях).',
+);
+const autoRestoreToggle = makeToggle(
+  'Предлагать восстановление при пустой базе',
+  'Если база пуста при открытии библиотеки — показать баннер восстановления из бэкапа.',
+);
+backupStatusEl.insertAdjacentElement('afterend', settingsBar);
+
+void getBackupSettings().then((s) => {
+  autoBackupToggle.cb.checked = s.autoBackup;
+  autoRestoreToggle.cb.checked = s.autoRestore;
+});
+autoBackupToggle.cb.addEventListener('change', () => {
+  void setBackupSettings({ autoBackup: autoBackupToggle.cb.checked });
+});
+autoRestoreToggle.cb.addEventListener('change', () => {
+  void setBackupSettings({ autoRestore: autoRestoreToggle.cb.checked });
+  void maybeShowRestoreBanner();
+});
+
+// Restore banner — shown when the DB is empty and auto-restore is enabled.
+const restoreBanner = document.createElement('div');
+restoreBanner.style.cssText =
+  'display:none; align-items:center; gap:12px; background:#1e293b; ' +
+  'border:1px solid #334155; border-radius:6px; padding:10px 14px; ' +
+  'margin-bottom:12px; font-size:13px; color:#e2e8f0;';
+const bannerText = document.createElement('span');
+bannerText.style.flex = '1';
+bannerText.textContent =
+  'База пуста. Восстановить из папки recensio-backup?';
+const restoreBtn = document.createElement('button');
+restoreBtn.type = 'button';
+restoreBtn.className = 'page-btn';
+restoreBtn.textContent = '↺ Восстановить из бэкапа';
+restoreBtn.addEventListener('click', () => {
+  pendingImportMode = 'replace';
+  importInput.value = '';
+  importInput.click();
+});
+restoreBanner.appendChild(bannerText);
+restoreBanner.appendChild(restoreBtn);
+settingsBar.insertAdjacentElement('afterend', restoreBanner);
+
+async function maybeShowRestoreBanner() {
+  const { autoRestore } = await getBackupSettings();
+  const empty = (await db.videos.count()) === 0;
+  restoreBanner.style.display = autoRestore && empty ? 'flex' : 'none';
+}
+
+// ── Backup / import handlers ─────────────────────────────────────────────────
 backupBtn.addEventListener('click', async () => {
   backupBtn.disabled = true;
   backupStatusEl.textContent = 'Готовлю бэкап…';
@@ -223,11 +317,14 @@ backupBtn.addEventListener('click', async () => {
   }
 });
 
-const importBtn = document.getElementById('import-btn') as HTMLButtonElement;
-const importInput = document.getElementById('import-input') as HTMLInputElement;
-
 importBtn.addEventListener('click', () => {
+  pendingImportMode = 'replace';
   // Reset value so picking the same folder twice still fires `change`.
+  importInput.value = '';
+  importInput.click();
+});
+mergeBtn.addEventListener('click', () => {
+  pendingImportMode = 'merge';
   importInput.value = '';
   importInput.click();
 });
@@ -235,23 +332,34 @@ importBtn.addEventListener('click', () => {
 importInput.addEventListener('change', async () => {
   const files = importInput.files ? Array.from(importInput.files) : [];
   if (!files.length) return;
-  if (!confirm(
-    `Импорт затрёт текущую базу и заменит её содержимым выбранной папки (${files.length} файлов). ` +
-    `Сначала сделай бэкап текущего состояния, если оно тебе нужно. Продолжить?`,
-  )) {
-    return;
-  }
+  const mode = pendingImportMode;
+  const confirmMsg =
+    mode === 'merge'
+      ? `Merge объединит выбранную папку (${files.length} файлов) с текущей базой: ` +
+        `ничего не удаляется, при совпадении видео берётся более свежая версия. Продолжить?`
+      : `Импорт затрёт текущую базу и заменит её содержимым выбранной папки (${files.length} файлов). ` +
+        `Сначала сделай бэкап текущего состояния, если оно тебе нужно. Продолжить?`;
+  if (!confirm(confirmMsg)) return;
+
   importBtn.disabled = true;
+  mergeBtn.disabled = true;
   backupBtn.disabled = true;
-  backupStatusEl.textContent = 'Импорт…';
+  restoreBtn.disabled = true;
+  backupStatusEl.textContent = mode === 'merge' ? 'Merge…' : 'Импорт…';
   try {
-    const result = await importBackup(files, (p) => {
-      const ratio = p.total ? `${p.current}/${p.total}` : '';
-      backupStatusEl.textContent =
-        `Импорт · ${p.stage} ${ratio}${p.message ? ` · ${p.message}` : ''}`;
-    });
+    const result = await importBackup(
+      files,
+      (p) => {
+        const ratio = p.total ? `${p.current}/${p.total}` : '';
+        backupStatusEl.textContent =
+          `${mode === 'merge' ? 'Merge' : 'Импорт'} · ${p.stage} ${ratio}` +
+          `${p.message ? ` · ${p.message}` : ''}`;
+      },
+      mode,
+    );
+    const verb = result.mode === 'merge' ? '⤵ Merge готов: +' : '↑ Импорт готов: ';
     backupStatusEl.textContent =
-      `↑ Импорт готов: videos ${result.videos}, screenshots ${result.screenshots}, ` +
+      `${verb}videos ${result.videos}, screenshots ${result.screenshots}, ` +
       `clips ${result.clips}` +
       (result.missingBlobs ? ` · отсутствует ${result.missingBlobs} файлов` : '') +
       '.';
@@ -261,14 +369,18 @@ importInput.addEventListener('change', async () => {
     selectedId = null;
     detailEl.innerHTML = '<p class="empty">Select a video to edit</p>';
     await refresh();
+    await maybeShowRestoreBanner();
   } catch (e) {
-    backupStatusEl.textContent = `Ошибка импорта: ${(e as Error).message}`;
+    backupStatusEl.textContent = `Ошибка: ${(e as Error).message}`;
   } finally {
     importBtn.disabled = false;
+    mergeBtn.disabled = false;
     backupBtn.disabled = false;
+    restoreBtn.disabled = false;
   }
 });
 
 void refresh().then(() => {
   if (selectedId) void renderDetail();
+  void maybeShowRestoreBanner();
 });

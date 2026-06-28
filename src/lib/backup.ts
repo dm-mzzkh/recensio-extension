@@ -189,16 +189,54 @@ export async function exportBackup(
   };
 }
 
+// A cheap fingerprint of everything exportBackup would ship. The background
+// auto-export compares this against the last successful run and skips the
+// download entirely when nothing changed — otherwise a 5-min alarm would spam
+// the browser's download history with identical manifests. Reads counts + a
+// few max timestamps; never loads blob bytes into memory.
+export async function computeDataSignature(): Promise<string> {
+  const videos = await db.videos.toArray(); // this table has no blobs — cheap
+  let videoMax = 0;
+  for (const v of videos) if (v.updatedAt > videoMax) videoMax = v.updatedAt;
+
+  const [tagCount, vtCount, stCount, scCount, clCount, readyClips] =
+    await Promise.all([
+      db.tags.count(),
+      db.videoTags.count(),
+      db.systemTags.count(),
+      db.screenshots.count(),
+      db.clips.count(),
+      // A finished recording flips status→'ready' and attaches a blob without
+      // touching createdAt, so count it separately to notice new bytes.
+      db.clips.where('status').equals('ready').count(),
+    ]);
+  // `.last()` on an indexed column loads a single row, not the whole table.
+  const lastShot = await db.screenshots.orderBy('createdAt').last();
+  const lastClip = await db.clips.orderBy('createdAt').last();
+
+  return [
+    videos.length, videoMax,
+    tagCount, vtCount, stCount,
+    scCount, lastShot?.createdAt ?? 0,
+    clCount, readyClips, lastClip?.createdAt ?? 0,
+  ].join('|');
+}
+
 // ─── Import ────────────────────────────────────────────────────────────────
 
+export type ImportMode = 'replace' | 'merge';
+
 export interface ImportProgress {
-  stage: 'reading' | 'validating' | 'wiping' | 'loading' | 'done';
+  stage: 'reading' | 'validating' | 'wiping' | 'loading' | 'merging' | 'done';
   current: number;
   total: number;
   message?: string;
 }
 
 export interface ImportResult {
+  mode: ImportMode;
+  // For 'replace' these are totals loaded; for 'merge' they're rows
+  // added/updated (existing untouched rows aren't counted).
   videos: number;
   tags: number;
   videoTags: number;
@@ -251,6 +289,7 @@ async function readManifest(file: File): Promise<Manifest> {
 export async function importBackup(
   files: File[],
   onProgress?: (p: ImportProgress) => void,
+  mode: ImportMode = 'replace',
 ): Promise<ImportResult> {
   onProgress?.({ stage: 'reading', current: 0, total: 1, message: 'Ищу manifest…' });
 
@@ -325,65 +364,69 @@ export async function importBackup(
     clipRows.push({ ...rest, blob });
   }
 
+  // blobRefs present on disk — used both to seed the ledger and (in merge) to
+  // know which manifest blobs we actually have bytes for.
+  const presentBlobRefs = new Set<string>();
+  for (const s of manifest.screenshots) if (blobByName.has(s.blobRef)) presentBlobRefs.add(s.blobRef);
+  for (const c of manifest.clips) if (c.blobRef && blobByName.has(c.blobRef)) presentBlobRefs.add(c.blobRef);
+
+  const TABLES = [
+    db.videos,
+    db.tags,
+    db.videoTags,
+    db.systemTags,
+    db.screenshots,
+    db.clips,
+    db.backupLedger,
+  ];
+
+  if (mode === 'merge') {
+    const result = await mergeManifest(manifest, shotRows, clipRows, presentBlobRefs, onProgress);
+    onProgress?.({ stage: 'done', current: 1, total: 1 });
+    return { mode, missingBlobs, ...result };
+  }
+
   onProgress?.({ stage: 'wiping', current: 0, total: 1, message: 'Чищу таблицы…' });
 
   // Single rw tx across every table. All clears + all puts in one shot so a
   // crash mid-import leaves the DB unchanged rather than half-loaded.
-  await db.transaction(
-    'rw',
-    [
-      db.videos,
-      db.tags,
-      db.videoTags,
-      db.systemTags,
-      db.screenshots,
-      db.clips,
-      db.backupLedger,
-    ],
-    async () => {
-      await db.videos.clear();
-      await db.tags.clear();
-      await db.videoTags.clear();
-      await db.systemTags.clear();
-      await db.screenshots.clear();
-      await db.clips.clear();
-      await db.backupLedger.clear();
+  await db.transaction('rw', TABLES, async () => {
+    await db.videos.clear();
+    await db.tags.clear();
+    await db.videoTags.clear();
+    await db.systemTags.clear();
+    await db.screenshots.clear();
+    await db.clips.clear();
+    await db.backupLedger.clear();
 
-      onProgress?.({ stage: 'loading', current: 0, total: 6, message: 'videos' });
-      if (manifest.videos.length) await db.videos.bulkPut(manifest.videos);
-      onProgress?.({ stage: 'loading', current: 1, total: 6, message: 'tags' });
-      if (manifest.tags.length) await db.tags.bulkPut(manifest.tags);
-      onProgress?.({ stage: 'loading', current: 2, total: 6, message: 'videoTags' });
-      if (manifest.videoTags.length) await db.videoTags.bulkPut(manifest.videoTags);
-      onProgress?.({ stage: 'loading', current: 3, total: 6, message: 'systemTags' });
-      if (manifest.systemTags.length) await db.systemTags.bulkPut(manifest.systemTags);
-      onProgress?.({ stage: 'loading', current: 4, total: 6, message: 'screenshots' });
-      if (shotRows.length) await db.screenshots.bulkPut(shotRows);
-      onProgress?.({ stage: 'loading', current: 5, total: 6, message: 'clips' });
-      if (clipRows.length) await db.clips.bulkPut(clipRows);
+    onProgress?.({ stage: 'loading', current: 0, total: 6, message: 'videos' });
+    if (manifest.videos.length) await db.videos.bulkPut(manifest.videos);
+    onProgress?.({ stage: 'loading', current: 1, total: 6, message: 'tags' });
+    if (manifest.tags.length) await db.tags.bulkPut(manifest.tags);
+    onProgress?.({ stage: 'loading', current: 2, total: 6, message: 'videoTags' });
+    if (manifest.videoTags.length) await db.videoTags.bulkPut(manifest.videoTags);
+    onProgress?.({ stage: 'loading', current: 3, total: 6, message: 'systemTags' });
+    if (manifest.systemTags.length) await db.systemTags.bulkPut(manifest.systemTags);
+    onProgress?.({ stage: 'loading', current: 4, total: 6, message: 'screenshots' });
+    if (shotRows.length) await db.screenshots.bulkPut(shotRows);
+    onProgress?.({ stage: 'loading', current: 5, total: 6, message: 'clips' });
+    if (clipRows.length) await db.clips.bulkPut(clipRows);
 
-      // Seed the ledger with everything we just imported. Without this, the
-      // very next exportBackup() would re-ship every blob to Downloads.
-      const now = Date.now();
-      const ledgerRows: { blobKey: string; exportedAt: number }[] = [];
-      for (const s of manifest.screenshots) {
-        if (blobByName.has(s.blobRef)) {
-          ledgerRows.push({ blobKey: `blobs/${s.blobRef}`, exportedAt: now });
-        }
-      }
-      for (const c of manifest.clips) {
-        if (c.blobRef && blobByName.has(c.blobRef)) {
-          ledgerRows.push({ blobKey: `blobs/${c.blobRef}`, exportedAt: now });
-        }
-      }
-      if (ledgerRows.length) await db.backupLedger.bulkAdd(ledgerRows);
-      onProgress?.({ stage: 'loading', current: 6, total: 6 });
-    },
-  );
+    // Seed the ledger with everything we just imported. Without this, the
+    // very next exportBackup() would re-ship every blob to Downloads.
+    const now = Date.now();
+    const ledgerRows = [...presentBlobRefs].map((ref) => ({
+      blobKey: `blobs/${ref}`,
+      exportedAt: now,
+    }));
+    if (ledgerRows.length) await db.backupLedger.bulkAdd(ledgerRows);
+    onProgress?.({ stage: 'loading', current: 6, total: 6 });
+  });
 
   onProgress?.({ stage: 'done', current: 1, total: 1 });
 
   return {
+    mode,
     videos: manifest.videos.length,
     tags: manifest.tags.length,
     videoTags: manifest.videoTags.length,
@@ -391,5 +434,144 @@ export async function importBackup(
     screenshots: shotRows.length,
     clips: clipRows.length,
     missingBlobs,
+  };
+}
+
+// Additive merge: never deletes. Videos resolve by videoId with last-write-wins
+// on updatedAt; tags resolve by name (their auto-increment ids differ between
+// DBs, so we remap into videoTags); the rest dedup on their natural compound
+// keys ([videoId+tagId], [videoId+name], [videoId+createdAt], [videoId+startSec]).
+// Everything runs in one rw tx so a crash leaves the DB untouched.
+async function mergeManifest(
+  manifest: Manifest,
+  shotRows: Screenshot[],
+  clipRows: Clip[],
+  presentBlobRefs: Set<string>,
+  onProgress?: (p: ImportProgress) => void,
+): Promise<Omit<ImportResult, 'mode' | 'missingBlobs'>> {
+  onProgress?.({ stage: 'merging', current: 0, total: 1, message: 'Объединяю…' });
+
+  let videosMerged = 0;
+  let tagsAdded = 0;
+  let videoTagsAdded = 0;
+  let systemTagsAdded = 0;
+  let screenshotsAdded = 0;
+  let clipsAdded = 0;
+
+  await db.transaction(
+    'rw',
+    [db.videos, db.tags, db.videoTags, db.systemTags, db.screenshots, db.clips, db.backupLedger],
+    async () => {
+      // videos — last-write-wins by updatedAt.
+      const existingVideos = new Map(
+        (await db.videos.toArray()).map((v) => [v.videoId, v.updatedAt ?? 0]),
+      );
+      const videosToPut = manifest.videos.filter((v) => {
+        const cur = existingVideos.get(v.videoId);
+        return cur === undefined || v.updatedAt > cur;
+      });
+      if (videosToPut.length) await db.videos.bulkPut(videosToPut);
+      videosMerged = videosToPut.length;
+
+      // tags — resolve by name, build old-id → current-id remap for videoTags.
+      const tagIdByName = new Map(
+        (await db.tags.toArray()).map((t) => [t.name, t.id as number]),
+      );
+      const tagIdMap = new Map<number, number>();
+      for (const t of manifest.tags) {
+        let id = tagIdByName.get(t.name);
+        if (id === undefined) {
+          id = (await db.tags.add({ name: t.name, createdAt: t.createdAt })) as number;
+          tagIdByName.set(t.name, id);
+          tagsAdded++;
+        }
+        if (t.id != null) tagIdMap.set(t.id, id);
+      }
+
+      // videoTags — dedup on [videoId + remapped tagId].
+      const vtKey = (vid: string, tid: number) => `${vid} ${tid}`;
+      const seenVT = new Set(
+        (await db.videoTags.toArray()).map((x) => vtKey(x.videoId, x.tagId)),
+      );
+      const vtToAdd: VideoTag[] = [];
+      for (const vt of manifest.videoTags) {
+        const tid = tagIdMap.get(vt.tagId);
+        if (tid == null) continue; // tag missing from manifest — skip orphan link
+        const k = vtKey(vt.videoId, tid);
+        if (seenVT.has(k)) continue;
+        seenVT.add(k);
+        vtToAdd.push({ videoId: vt.videoId, tagId: tid });
+      }
+      if (vtToAdd.length) await db.videoTags.bulkAdd(vtToAdd);
+      videoTagsAdded = vtToAdd.length;
+
+      // systemTags — dedup on [videoId + name].
+      const stKey = (vid: string, name: string) => `${vid} ${name}`;
+      const seenST = new Set(
+        (await db.systemTags.toArray()).map((x) => stKey(x.videoId, x.name)),
+      );
+      const stToAdd: SystemTag[] = [];
+      for (const st of manifest.systemTags) {
+        const k = stKey(st.videoId, st.name);
+        if (seenST.has(k)) continue;
+        seenST.add(k);
+        stToAdd.push({ videoId: st.videoId, name: st.name, createdAt: st.createdAt });
+      }
+      if (stToAdd.length) await db.systemTags.bulkAdd(stToAdd);
+      systemTagsAdded = stToAdd.length;
+
+      // screenshots — dedup on [videoId + createdAt], drop the backup's id.
+      const scKey = (vid: string, ts: number) => `${vid} ${ts}`;
+      const seenSC = new Set(
+        (await db.screenshots.toArray()).map((x) => scKey(x.videoId, x.createdAt)),
+      );
+      const scToAdd = shotRows
+        .filter((s) => {
+          const k = scKey(s.videoId, s.createdAt);
+          if (seenSC.has(k)) return false;
+          seenSC.add(k);
+          return true;
+        })
+        .map(({ id: _id, ...rest }) => rest);
+      if (scToAdd.length) await db.screenshots.bulkAdd(scToAdd);
+      screenshotsAdded = scToAdd.length;
+
+      // clips — dedup on [videoId + startSec], drop the backup's id.
+      const clKey = (vid: string, start: number) => `${vid} ${start}`;
+      const seenCL = new Set(
+        (await db.clips.toArray()).map((x) => clKey(x.videoId, x.startSec)),
+      );
+      const clToAdd = clipRows
+        .filter((c) => {
+          const k = clKey(c.videoId, c.startSec);
+          if (seenCL.has(k)) return false;
+          seenCL.add(k);
+          return true;
+        })
+        .map(({ id: _id, ...rest }) => rest);
+      if (clToAdd.length) await db.clips.bulkAdd(clToAdd);
+      clipsAdded = clToAdd.length;
+
+      // ledger — mark the blobs we now hold so the next export skips them.
+      const seenLedger = new Set((await db.backupLedger.toArray()).map((l) => l.blobKey));
+      const now = Date.now();
+      const ledgerToAdd: { blobKey: string; exportedAt: number }[] = [];
+      for (const ref of presentBlobRefs) {
+        const key = `blobs/${ref}`;
+        if (seenLedger.has(key)) continue;
+        seenLedger.add(key);
+        ledgerToAdd.push({ blobKey: key, exportedAt: now });
+      }
+      if (ledgerToAdd.length) await db.backupLedger.bulkAdd(ledgerToAdd);
+    },
+  );
+
+  return {
+    videos: videosMerged,
+    tags: tagsAdded,
+    videoTags: videoTagsAdded,
+    systemTags: systemTagsAdded,
+    screenshots: screenshotsAdded,
+    clips: clipsAdded,
   };
 }
