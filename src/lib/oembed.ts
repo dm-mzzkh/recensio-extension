@@ -80,13 +80,7 @@ export async function fetchVideoMetadata(url: string): Promise<VideoMetadata | n
   }
 }
 
-export interface ExternalUrlInput {
-  videoId: string;
-  source?: VideoSource;
-  url?: string;
-}
-
-export function externalUrl(v: ExternalUrlInput): string {
+export function externalUrl(v: { videoId: string; source?: VideoSource; url?: string }): string {
   if (v.url) return v.url;
   if (v.source === 'tiktok') {
     // No channel-slug context available — use the canonical short form;

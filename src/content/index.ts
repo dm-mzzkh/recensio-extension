@@ -1,4 +1,5 @@
 import { extractVideoRef, type VideoSource } from '../lib/oembed';
+import { fmtTime, fmtYtDlpTime, ytDlpCommand } from '../lib/format';
 
 const BTN_ID = 'recensio-title-btn';
 const SHOT_BTN_ID = 'recensio-shot-btn';
@@ -213,16 +214,6 @@ function findVideoEl(): HTMLVideoElement | null {
   );
 }
 
-function fmtTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0;
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
-}
-
 let toastTimer: number | undefined;
 function showToast(text: string, error = false) {
   let el = document.getElementById(TOAST_ID);
@@ -280,21 +271,6 @@ interface PendingClip {
   endSec?: number;
 }
 let pendingClip: PendingClip | null = null;
-
-function fmtYtDlpTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0;
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec - h * 3600 - m * 60;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${s.toFixed(2).padStart(5, '0')}`;
-}
-
-function ytDlpCommand(videoId: string, startSec: number, endSec: number): string {
-  const url = `https://www.youtube.com/watch?v=${videoId}`;
-  const range = `*${fmtYtDlpTime(startSec)}-${fmtYtDlpTime(endSec)}`;
-  return `yt-dlp -f "bv*+ba/b" --download-sections "${range}" "${url}"`;
-}
 
 function updateClipButton() {
   const btn = document.getElementById(CLIP_BTN_ID);
@@ -388,7 +364,7 @@ async function savePendingClip() {
       return;
     }
     const clipId = resp.id;
-    const cmd = ytDlpCommand(videoId, startSec, endSec);
+    const cmd = ytDlpCommand(`https://www.youtube.com/watch?v=${videoId}`, startSec, endSec);
     let copied = false;
     try {
       await navigator.clipboard.writeText(cmd);

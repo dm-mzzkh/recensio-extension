@@ -252,8 +252,6 @@ def main():
                 process_clip(msg)
             elif cmd == 'source-tags':
                 process_source_tags(msg)
-            elif cmd == 'ping':
-                send_message({'cmd': 'pong'})
             else:
                 send_message({
                     'cmd': 'clip-error',

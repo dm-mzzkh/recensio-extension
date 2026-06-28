@@ -7,6 +7,7 @@ import {
   type Video,
   type Tag,
 } from '../db';
+import { fmtTime } from '../lib/format';
 
 type NodeKind = 'video' | 'tag' | 'clip' | 'screenshot';
 
@@ -83,16 +84,6 @@ let panStartTx = 0;
 let panStartTy = 0;
 let panning = false;
 let pressMovedDist = 0;
-
-function fmtTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0;
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
-}
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;

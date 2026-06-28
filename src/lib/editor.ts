@@ -17,6 +17,7 @@ import {
   type Video,
 } from '../db';
 import { externalUrl } from './oembed';
+import { fmtTime, fmtYtDlpTime, ytDlpCommand } from './format';
 
 export interface EditorOptions {
   onSaved?: () => void | Promise<void>;
@@ -26,30 +27,7 @@ export interface EditorOptions {
 
 const editorCleanups = new WeakMap<HTMLElement, () => void>();
 
-function fmtTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0;
-  const s = Math.floor(sec);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
-}
 
-function fmtYtDlpTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) sec = 0;
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec - h * 3600 - m * 60;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${s.toFixed(2).padStart(5, '0')}`;
-}
-
-function ytDlpCommand(video: Video, startSec: number, endSec: number): string {
-  const url = externalUrl(video);
-  const range = `*${fmtYtDlpTime(startSec)}-${fmtYtDlpTime(endSec)}`;
-  return `yt-dlp -f "bv*+ba/b" --download-sections "${range}" "${url}"`;
-}
 
 function sourceLabel(source: Video['source']): string {
   return source === 'tiktok' ? 'TikTok' : 'YouTube';
@@ -564,7 +542,7 @@ export async function renderEditor(
       ytDlp.title = 'Скопировать команду yt-dlp для скачивания клипа';
       ytDlp.textContent = 'yt-dlp';
       ytDlp.addEventListener('click', async () => {
-        const cmd = ytDlpCommand(v!, c.startSec, c.endSec);
+        const cmd = ytDlpCommand(externalUrl(v!), c.startSec, c.endSec);
         try {
           await navigator.clipboard.writeText(cmd);
           ytDlp.textContent = 'Copied ✓';

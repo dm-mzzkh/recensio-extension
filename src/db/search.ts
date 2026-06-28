@@ -8,13 +8,6 @@ export interface SearchFilters {
   ratingMax?: number;
 }
 
-function intersect<T>(prev: Set<T> | null, next: Set<T>): Set<T> {
-  if (prev === null) return next;
-  const out = new Set<T>();
-  for (const v of prev) if (next.has(v)) out.add(v);
-  return out;
-}
-
 export async function searchVideos(filters: SearchFilters): Promise<Video[]> {
   let candidateIds: Set<string> | null = null;
 
@@ -26,7 +19,13 @@ export async function searchVideos(filters: SearchFilters): Promise<Video[]> {
       if (tag.id == null) continue;
       const links = await db.videoTags.where('tagId').equals(tag.id).toArray();
       const ids = new Set(links.map((l) => l.videoId));
-      candidateIds = intersect(candidateIds, ids);
+      if (candidateIds === null) {
+        candidateIds = ids;
+      } else {
+        const merged = new Set<string>();
+        for (const id of candidateIds) if (ids.has(id)) merged.add(id);
+        candidateIds = merged;
+      }
       if (!candidateIds.size) return [];
     }
   }

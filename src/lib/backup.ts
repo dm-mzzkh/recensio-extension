@@ -195,27 +195,23 @@ export async function exportBackup(
 // the browser's download history with identical manifests. Reads counts + a
 // few max timestamps; never loads blob bytes into memory.
 export async function computeDataSignature(): Promise<string> {
-  const videos = await db.videos.toArray(); // this table has no blobs — cheap
-  let videoMax = 0;
-  for (const v of videos) if (v.updatedAt > videoMax) videoMax = v.updatedAt;
-
-  const [tagCount, vtCount, stCount, scCount, clCount, readyClips] =
+  const [videoCount, videoMaxDoc, tagCount, vtCount, stCount, scCount, clCount, readyClips, lastShot, lastClip] =
     await Promise.all([
+      db.videos.count(),
+      db.videos.orderBy('updatedAt').last(),
       db.tags.count(),
       db.videoTags.count(),
       db.systemTags.count(),
       db.screenshots.count(),
       db.clips.count(),
-      // A finished recording flips status→'ready' and attaches a blob without
-      // touching createdAt, so count it separately to notice new bytes.
       db.clips.where('status').equals('ready').count(),
+      db.screenshots.orderBy('createdAt').last(),
+      db.clips.orderBy('createdAt').last(),
     ]);
-  // `.last()` on an indexed column loads a single row, not the whole table.
-  const lastShot = await db.screenshots.orderBy('createdAt').last();
-  const lastClip = await db.clips.orderBy('createdAt').last();
+  const videoMax = (videoMaxDoc as Video | undefined)?.updatedAt ?? 0;
 
   return [
-    videos.length, videoMax,
+    videoCount, videoMax,
     tagCount, vtCount, stCount,
     scCount, lastShot?.createdAt ?? 0,
     clCount, readyClips, lastClip?.createdAt ?? 0,

@@ -106,10 +106,6 @@ export class RecensioDB extends Dexie {
     this.version(3).stores({
       clips: '++id, videoId, startSec, createdAt, [videoId+startSec]',
     });
-    // v4 adds blob/mimeType/width/height fields. Indices unchanged.
-    this.version(4).stores({
-      clips: '++id, videoId, startSec, createdAt, [videoId+startSec]',
-    });
     // v5 adds status/errorMsg/stage fields and indexes status. Existing
     // rows will have status===undefined; editor treats absence as "ready
     // if blob, otherwise pending".
