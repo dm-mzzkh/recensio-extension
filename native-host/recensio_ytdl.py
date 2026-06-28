@@ -53,6 +53,20 @@ os.environ['PATH'] = os.pathsep.join(
 CHUNK_BYTES = 700 * 1024
 
 
+# YouTube increasingly rejects anonymous requests with "Sign in to confirm
+# you're not a bot". Passing the browser's cookies makes yt-dlp authenticate
+# as the logged-in user and sidesteps the bot check. Default to Firefox (the
+# only browser this extension runs in); override via env to point at another
+# browser or a specific profile, e.g.
+# RECENSIO_YTDLP_COOKIES_BROWSER='firefox:~/path/to/profile'. Set it empty to
+# disable cookie loading entirely.
+_COOKIES_BROWSER = os.environ.get('RECENSIO_YTDLP_COOKIES_BROWSER', 'firefox')
+
+
+def cookie_args() -> list:
+    return ['--cookies-from-browser', _COOKIES_BROWSER] if _COOKIES_BROWSER else []
+
+
 def read_message():
     raw = sys.stdin.buffer.read(4)
     if len(raw) < 4:
@@ -89,7 +103,7 @@ def resolve_bin(name: str) -> str:
 
 def yt_dlp_url(yt_dlp: str, video_url: str, fmt: str) -> str:
     proc = subprocess.run(
-        [yt_dlp, '-f', fmt, '-g', video_url],
+        [yt_dlp, *cookie_args(), '-f', fmt, '-g', video_url],
         capture_output=True,
         check=False,
     )
@@ -112,7 +126,7 @@ def yt_dlp_json(yt_dlp: str, video_url: str) -> dict:
     it so a real failure (e.g. private video, geo-block) gets surfaced.
     """
     proc = subprocess.run(
-        [yt_dlp, '-J', '--no-warnings', '--skip-download', video_url],
+        [yt_dlp, *cookie_args(), '-J', '--no-warnings', '--skip-download', video_url],
         capture_output=True,
         check=False,
     )
