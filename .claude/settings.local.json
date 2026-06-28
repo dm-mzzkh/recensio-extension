@@ -17,7 +17,19 @@
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(r['full_name'], '|', r.get\\('description',''\\)[:120], '|', r['stargazers_count'], 'stars'\\) for r in data['items']]\")",
       "Bash(python3 -c \"import json,sys,base64; r=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(r['content']\\).decode\\(\\)\\)\")",
       "Bash(npx tsc *)",
-      "Bash(python3 -m py_compile native-host/recensio_ytdl.py)"
+      "Bash(python3 -m py_compile native-host/recensio_ytdl.py)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git -c user.name=dm -c user.email=mozzhukhin.dmitry@gmail.com commit -m ' *)",
+      "Bash(sed -n '1,60p' src/db/videos.ts)",
+      "Bash(sed -n '1,80p' src/db/tags.ts)",
+      "Bash(make clean *)",
+      "Bash(echo \"CLEAN_EXIT: $?\")",
+      "Bash(make build *)",
+      "Bash(node -p \"require\\('./node_modules/web-ext/package.json'\\).version\")",
+      "Bash(sed -n '80,120p' node_modules/web-ext/lib/cmd/sign.js)",
+      "Bash(make -n sign WEBEXT_FLAGS=--verbose)",
+      "Bash(make -n lint WEBEXT_FLAGS=--verbose)"
     ]
   }
 }
